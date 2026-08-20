@@ -1,0 +1,21 @@
+{
+  "name": "sample-game",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@game/core": "workspace:*",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@game/typescript-config": "workspace:*",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.0"
+  }
+}

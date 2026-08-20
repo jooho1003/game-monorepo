@@ -1,0 +1,4 @@
+{
+  "extends": "@game/typescript-config/base.json",
+  "include": ["src", "test"]
+}
