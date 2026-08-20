@@ -916,6 +916,598 @@ button:focus-visible {
   font-size: 24px;
 }
 
+/* Loadout screen: three-column character/equipment presentation. */
+.select-screen {
+  isolation: isolate;
+  padding: 0;
+  background:
+    linear-gradient(
+      90deg,
+      rgb(3 8 11 / 97%),
+      rgb(9 18 22 / 84%) 52%,
+      #071014ee
+    ),
+    linear-gradient(180deg, transparent 55%, #03080c 100%),
+    url("/assets/title/tower-of-the-end.png") center 42% / cover no-repeat;
+  color: #e9eee9;
+  font-family: "Song Myung Local", "Noto Serif KR", serif;
+}
+
+.select-screen::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, transparent 49.9%, rgb(145 193 181 / 5%) 50%),
+    linear-gradient(0deg, transparent 49.9%, rgb(145 193 181 / 3%) 50%);
+  background-size: 54px 54px;
+  box-shadow: inset 0 0 160px 50px #020608;
+  content: "";
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.select-screen::after {
+  position: absolute;
+  right: 34%;
+  bottom: -42%;
+  z-index: -1;
+  width: 64%;
+  aspect-ratio: 1;
+  border: 1px solid #75cfbd1f;
+  border-radius: 50%;
+  background: radial-gradient(circle, #2a76691f, transparent 62%);
+  box-shadow:
+    0 0 0 76px #75cfbd0a,
+    0 0 0 152px #75cfbd08;
+  content: "";
+  pointer-events: none;
+}
+
+.select-header {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 78px;
+  margin: 0;
+  padding: 0 clamp(30px, 3.4vw, 58px);
+  border-bottom: 1px solid #6c857d45;
+  background: linear-gradient(180deg, rgb(3 8 11 / 88%), transparent);
+}
+
+.select-header .text-button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-self: start;
+  padding: 8px 0;
+  border: 0;
+  color: #81958f;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.select-header .text-button span {
+  color: #d4a65e;
+  font-family: Georgia, serif;
+  font-size: 20px;
+}
+
+.select-header__brand {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  text-align: center;
+}
+
+.select-header__brand p,
+.select-header__brand strong {
+  margin: 0;
+}
+
+.select-header__brand p {
+  color: #dfded4;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+}
+
+.select-header__brand strong {
+  color: #bf8d43;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+}
+
+.select-header__progress {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-self: end;
+  color: #657871;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.16em;
+}
+
+.select-header__progress strong {
+  color: #d6c39f;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.loadout-layout {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(340px, 1fr) minmax(
+      320px,
+      390px
+    );
+  gap: clamp(18px, 2.2vw, 38px);
+  width: 100%;
+  max-width: 1540px;
+  height: calc(100% - 78px);
+  margin: 0 auto;
+  padding: clamp(22px, 3vh, 36px) clamp(30px, 3.4vw, 58px)
+    clamp(20px, 3vh, 34px);
+}
+
+.weapon-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.weapon-panel__title {
+  display: block;
+  margin: 0 0 16px;
+  padding: 0 0 13px 2px;
+  border-bottom: 1px solid #6f857d45;
+}
+
+.weapon-panel__title p,
+.weapon-panel__title h2,
+.weapon-panel__title span {
+  display: block;
+  margin: 0;
+}
+
+.weapon-panel__title p {
+  color: #be8c49;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.2em;
+}
+
+.weapon-panel__title h2 {
+  margin: 4px 0 3px;
+  color: #e8e8df;
+  font-size: 25px;
+  font-weight: 400;
+}
+
+.weapon-panel__title span {
+  color: #637770;
+  font-size: 9px;
+}
+
+.weapon-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.weapon-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  gap: 13px;
+  align-items: center;
+  justify-items: stretch;
+  min-width: 0;
+  height: 72px;
+  padding: 5px 12px 5px 5px;
+  overflow: hidden;
+  border: 1px solid #495b564f;
+  border-left: 2px solid transparent;
+  background: linear-gradient(90deg, rgb(11 21 24 / 88%), rgb(9 16 19 / 45%));
+  color: #83948f;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms,
+    background 160ms,
+    color 160ms,
+    transform 160ms;
+}
+
+.weapon-card::after {
+  position: absolute;
+  inset: 0 100% 0 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--weapon-accent) 18%, transparent),
+    transparent
+  );
+  content: "";
+  transition: inset 180ms ease;
+}
+
+.weapon-card:hover,
+.weapon-card.is-selected {
+  border-color: color-mix(in srgb, var(--weapon-accent) 62%, #43514d);
+  border-left-color: var(--weapon-accent);
+  background: rgb(13 25 28 / 88%);
+  color: #edf4f0;
+  transform: translateX(6px);
+}
+
+.weapon-card:hover::after,
+.weapon-card.is-selected::after {
+  right: 0;
+}
+
+.weapon-card img {
+  width: 62px;
+  height: 62px;
+  border: 1px solid #79847d4d;
+  object-fit: cover;
+}
+
+.weapon-card > span {
+  display: grid;
+  gap: 2px;
+}
+
+.weapon-card small {
+  color: color-mix(in srgb, var(--weapon-accent) 65%, #7f8b87);
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 7px;
+  letter-spacing: 0.13em;
+}
+
+.weapon-card strong {
+  color: inherit;
+  font-family: "Song Myung Local", serif;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.weapon-card > i {
+  color: var(--weapon-accent);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.character-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.character-card__index {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #71847e;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.13em;
+}
+
+.character-card__index i {
+  width: min(100px, 18vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #788d855c, transparent);
+}
+
+.character-card__index strong {
+  color: #b7935e;
+  font-size: 9px;
+}
+
+.character-portrait {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  overflow: visible;
+  background: none;
+}
+
+.character-portrait::before {
+  display: none;
+}
+
+.character-portrait__halo {
+  position: absolute;
+  top: 47%;
+  left: 50%;
+  width: min(38vw, 470px);
+  aspect-ratio: 1;
+  border: 1px solid #8ab7aa20;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(
+      from 0deg,
+      #99cab610 0 1deg,
+      transparent 1deg 15deg
+    ),
+    radial-gradient(circle, #478e7d16, transparent 66%);
+  box-shadow:
+    0 0 0 40px #8ab7aa08,
+    inset 0 0 70px #6fc8b315;
+  transform: translate(-50%, -50%);
+}
+
+.character-portrait img {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 22px 24px rgb(0 0 0 / 62%));
+  animation: loadout-character-in 260ms ease-out both;
+}
+
+.character-portrait__floor {
+  position: absolute;
+  bottom: 2%;
+  left: 50%;
+  z-index: 1;
+  width: 72%;
+  height: 11%;
+  border: 1px solid #77b7a52d;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #6bb9a32b, transparent 68%);
+  box-shadow: 0 0 30px #5ca89122;
+  transform: translateX(-50%);
+}
+
+@keyframes loadout-character-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.character-card__info {
+  position: absolute;
+  right: 5%;
+  bottom: 2%;
+  left: 5%;
+  z-index: 3;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-top: 1px solid #6d8c824f;
+  border-bottom: 1px solid #6d8c822f;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(4 11 14 / 82%) 15% 85%,
+    transparent
+  );
+}
+
+.character-card__info p,
+.character-card__info h2,
+.character-card__info span {
+  margin: 0;
+}
+.character-card__info p {
+  color: #749189;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+.character-card__info h2 {
+  margin-top: 1px;
+  color: #f0eee4;
+  font-family: "Song Myung Local", serif;
+  font-size: 27px;
+  font-weight: 400;
+  line-height: 1;
+}
+.character-card__info > span {
+  color: #d4aa67;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.weapon-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  min-height: 0;
+  margin: 0;
+  padding: clamp(14px, 2vh, 24px) 0 0 clamp(24px, 2.5vw, 42px);
+  border: 0;
+  border-left: 1px solid #71877f47;
+  background: linear-gradient(90deg, rgb(5 13 16 / 58%), transparent 55%);
+}
+
+.weapon-detail__heading {
+  position: relative;
+  padding-bottom: 17px;
+  border-bottom: 1px solid #6a807844;
+}
+.weapon-detail__heading::after {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 72px;
+  height: 1px;
+  background: var(--weapon-accent);
+  content: "";
+}
+.weapon-detail__heading p,
+.weapon-detail__heading h1,
+.weapon-detail__heading span {
+  display: block;
+  margin: 0;
+}
+.weapon-detail__heading p {
+  color: #b78a4d;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 9px;
+  letter-spacing: 0.26em;
+}
+.weapon-detail__heading h1 {
+  margin: 3px 0 4px;
+  color: #f0eee4;
+  font-size: clamp(38px, 3.5vw, 58px);
+  font-weight: 400;
+  line-height: 1;
+}
+.weapon-detail__heading span {
+  color: #91aaa2;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.weapon-detail__description {
+  margin: clamp(15px, 2.5vh, 25px) 0;
+  color: #91a49e;
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.weapon-stats {
+  display: grid;
+  gap: 10px;
+  margin-bottom: clamp(16px, 2.5vh, 28px);
+}
+.weapon-stat {
+  display: grid;
+  grid-template-columns: 82px 1fr 28px;
+  gap: 9px;
+  align-items: center;
+}
+.weapon-stat > span {
+  color: #c4cec9;
+  font-size: 10px;
+}
+.weapon-stat > span small {
+  display: block;
+  color: #5f736d;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 6px;
+  letter-spacing: 0.11em;
+}
+.weapon-stat > div {
+  height: 3px;
+  overflow: hidden;
+  background: #25332f;
+}
+.weapon-stat > div i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--weapon-accent) 45%, #7e603b),
+    var(--weapon-accent)
+  );
+  box-shadow: 0 0 9px color-mix(in srgb, var(--weapon-accent) 45%, transparent);
+}
+.weapon-stat > strong {
+  color: #d5c6a9;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 10px;
+  font-weight: 400;
+  text-align: right;
+}
+
+.weapon-skill {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 15px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #65787150;
+  background: linear-gradient(90deg, #142124c7, #0c15184d);
+}
+.weapon-skill img {
+  width: 72px;
+  height: 72px;
+  border: 1px solid #a28d6d78;
+  object-fit: cover;
+}
+.weapon-skill p,
+.weapon-skill h3,
+.weapon-skill span {
+  margin: 0;
+}
+.weapon-skill p {
+  color: #b58b50;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 7px;
+  letter-spacing: 0.18em;
+}
+.weapon-skill h3 {
+  margin: 3px 0 4px;
+  color: #ecebe2;
+  font-size: 19px;
+  font-weight: 400;
+}
+.weapon-skill span {
+  color: #728780;
+  font-size: 9px;
+}
+
+.weapon-detail .depart-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 66px;
+  margin-top: auto;
+  padding: 12px 18px;
+  border: 1px solid #b78d4f;
+  background: linear-gradient(90deg, #b2823e, #d0ad67);
+  color: #101718;
+}
+
+.weapon-detail .depart-button > span {
+  display: grid;
+  gap: 2px;
+  font-size: 15px;
+  text-align: left;
+}
+.weapon-detail .depart-button small {
+  color: #3a3328;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 7px;
+  letter-spacing: 0.15em;
+}
+.weapon-detail .depart-button strong {
+  font-family: Georgia, serif;
+  font-size: 27px;
+  font-weight: 400;
+}
+
 .game-screen {
   background: #080e13;
 }
@@ -1287,24 +1879,68 @@ button:focus-visible {
 
 @media (max-height: 680px) {
   .select-screen {
-    padding-top: 24px;
-    padding-bottom: 24px;
+    padding: 0;
   }
 
   .select-header {
-    margin-bottom: 16px;
+    height: 64px;
+    margin: 0;
+  }
+
+  .loadout-layout {
+    height: calc(100% - 64px);
+    padding-top: 12px;
+    padding-bottom: 12px;
   }
 
   .weapon-panel {
-    padding: 18px 24px;
+    padding: 0;
+  }
+
+  .weapon-panel__title {
+    margin-bottom: 8px;
+    padding-bottom: 7px;
+  }
+
+  .weapon-card {
+    height: 60px;
+  }
+
+  .weapon-card img {
+    width: 50px;
+    height: 50px;
   }
 
   .weapon-detail {
-    margin: 16px 0;
-    padding: 14px;
+    margin: 0;
+    padding: 8px 0 0 22px;
   }
 
-  .character-portrait {
-    min-height: 250px;
+  .weapon-detail__heading {
+    padding-bottom: 10px;
+  }
+
+  .weapon-detail__description {
+    margin: 10px 0;
+    line-height: 1.45;
+  }
+
+  .weapon-stats {
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .weapon-skill {
+    grid-template-columns: 54px 1fr;
+    padding: 7px;
+  }
+
+  .weapon-skill img {
+    width: 54px;
+    height: 54px;
+  }
+
+  .weapon-detail .depart-button {
+    min-height: 56px;
   }
 }

@@ -24,41 +24,27 @@ export function SelectScreen() {
           type="button"
           onClick={() => dispatch({ type: "RETURN_TITLE" })}
         >
-          ← 타이틀
+          <span>←</span> BACK
         </button>
-        <div>
-          <p className="eyebrow">PREPARE THE ASCENT</p>
-          <h1>도전자를 준비하세요</h1>
+        <div className="select-header__brand">
+          <p>종말의 탑</p>
+          <strong>LOADOUT</strong>
         </div>
-        <span className="select-header__step">LOADOUT 01</span>
+        <div className="select-header__progress">
+          <span>CHARACTER SELECT</span>
+          <strong>01 / 01</strong>
+        </div>
       </header>
 
       <section className="loadout-layout">
-        <article className="character-card">
-          <span className="character-card__badge">선택 가능</span>
-          <div className="character-portrait" aria-label="에른 임시 초상">
-            <div className="character-portrait__hair" />
-            <div className="character-portrait__face" />
-            <div className="character-portrait__coat" />
-            <span>PROTOTYPE</span>
-          </div>
-          <div className="character-card__info">
-            <p>기본 캐릭터</p>
-            <h2>에른</h2>
-            <span>Lv.1 초보자</span>
-          </div>
-        </article>
-
-        <section className="weapon-panel" aria-labelledby="weapon-heading">
+        <aside className="weapon-panel" aria-labelledby="weapon-heading">
           <div className="weapon-panel__title">
-            <div>
-              <p className="eyebrow">CHOOSE ONE</p>
-              <h2 id="weapon-heading">시작 무기</h2>
-            </div>
-            <span>하나만 장착 가능</span>
+            <p>SELECT EQUIPMENT</p>
+            <h2 id="weapon-heading">시작 무기</h2>
+            <span>하나의 무기만 장착할 수 있습니다.</span>
           </div>
 
-          <div className="weapon-grid">
+          <div className="weapon-grid" role="list">
             {weaponDefinitions.map((weapon) => {
               const active = weapon.id === selectedWeapon;
               return (
@@ -72,38 +58,112 @@ export function SelectScreen() {
                   }
                   onClick={() => setSelectedWeapon(weapon.id)}
                 >
-                  <strong>{weapon.icon}</strong>
-                  <span>{weapon.name}</span>
-                  <small>{active ? "선택됨" : "선택"}</small>
+                  <img src={weapon.image} alt="" />
+                  <span>
+                    <small>{weapon.englishName}</small>
+                    <strong>{weapon.name}</strong>
+                  </span>
+                  <i aria-hidden="true">{active ? "◆" : "◇"}</i>
                 </button>
               );
             })}
           </div>
+        </aside>
 
-          <div className="weapon-detail">
-            <div
-              className="weapon-detail__icon"
-              style={
-                { "--weapon-accent": selected.accent } as React.CSSProperties
-              }
-            >
-              {selected.icon}
-            </div>
+        <article className="character-card" aria-label="캐릭터 장비 미리보기">
+          <div className="character-card__index">
+            <span>NO. 01</span>
+            <i />
+            <strong>ERN</strong>
+          </div>
+          <div className="character-portrait">
+            <div className="character-portrait__halo" aria-hidden="true" />
+            <img
+              key={selected.id}
+              src={selected.characterImage}
+              alt={`${selected.name}을 장비한 에른`}
+            />
+            <span className="character-portrait__floor" aria-hidden="true" />
+          </div>
+          <div className="character-card__info">
             <div>
-              <p>{selected.name} 전투 방식</p>
-              <h3>{selected.trait}</h3>
-              <span>
-                첫 스킬 <strong>{selected.skill}</strong> · 관리자 대화 후 해금
-              </span>
+              <p>초보 탐험가</p>
+              <h2>에른</h2>
+            </div>
+            <span>LV. 01</span>
+          </div>
+        </article>
+
+        <section
+          className="weapon-detail"
+          aria-live="polite"
+          style={{ "--weapon-accent": selected.accent } as React.CSSProperties}
+        >
+          <div className="weapon-detail__heading">
+            <p>{selected.englishName}</p>
+            <h1>{selected.name}</h1>
+            <span>{selected.role}</span>
+          </div>
+
+          <p className="weapon-detail__description">{selected.description}</p>
+
+          <div className="weapon-stats" aria-label={`${selected.name} 능력치`}>
+            <Stat
+              label="공격"
+              englishLabel="ATTACK"
+              value={selected.stats.attack}
+            />
+            <Stat
+              label="속도"
+              englishLabel="SPEED"
+              value={selected.stats.speed}
+            />
+            <Stat
+              label="방어"
+              englishLabel="DEFENSE"
+              value={selected.stats.defense}
+            />
+          </div>
+
+          <div className="weapon-skill">
+            <img src={selected.image} alt="" />
+            <div>
+              <p>FIRST SKILL</p>
+              <h3>{selected.skill}</h3>
+              <span>{selected.trait}</span>
             </div>
           </div>
 
           <button className="depart-button" type="button" onClick={startRun}>
-            이 장비로 1층에 입장
-            <span>→</span>
+            <span>
+              <small>CONFIRM LOADOUT</small>이 장비로 1층에 입장
+            </span>
+            <strong>→</strong>
           </button>
         </section>
       </section>
     </main>
+  );
+}
+
+function Stat({
+  label,
+  englishLabel,
+  value,
+}: {
+  label: string;
+  englishLabel: string;
+  value: number;
+}) {
+  return (
+    <div className="weapon-stat">
+      <span>
+        {label} <small>{englishLabel}</small>
+      </span>
+      <div>
+        <i style={{ width: `${value}%` }} />
+      </div>
+      <strong>{value}</strong>
+    </div>
   );
 }
