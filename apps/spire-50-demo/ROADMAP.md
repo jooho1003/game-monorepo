@@ -5,7 +5,7 @@
 > **패키지/폴더명**: `apps/spire-50-demo`
 > **기술 기반**: React 18, Phaser 3.90, Zustand, Vite 6, TypeScript strict, Zod, Howler.js, pnpm/Turborepo
 > **작성일**: 2026-08-20
-> **상태**: 계획 수립 완료, 구현 대기
+> **상태**: P0 플레이 가능 뼈대 구현, 결정론 세분화와 P1 콘텐츠 대기
 
 ---
 
@@ -103,17 +103,17 @@
 
 목표: 구현을 시작해도 구조·자산·조작 충돌 때문에 되돌아가지 않는 상태.
 
-- [ ] `apps/sample-game` 구성을 참고해 `apps/spire-50-demo` React 18 + Phaser/Vite 앱 생성.
-- [ ] 16:9 기준 해상도 `1280×720`, 확대 시 정수 배율 우선, 화면 비율 유지 정책 확정.
+- [x] `apps/sample-game` 구성을 참고해 `apps/spire-50-demo` React 18 + Phaser/Vite 앱 생성.
+- [x] 16:9 기준 해상도 `1280×720`, 확대 시 정수 배율 우선, 화면 비율 유지 정책 확정.
 - [ ] React 화면 흐름과 Phaser 월드 흐름 정의: `Title → Select → Rest ↔ Battle/Shop → FloorResult → RunResult`.
 - [ ] 순수 TypeScript 규칙 엔진이 명령을 처리하고 스냅샷+연출 이벤트를 반환하도록 경계를 확정. Phaser에는 판정 권위를 두지 않는다.
-- [ ] Zustand 단일 스토어를 React/Phaser 공용 읽기 모델로 만들고, 렌더러가 직접 규칙 상태를 수정하지 못하게 한다.
+- [x] Zustand 단일 스토어를 React/Phaser 공용 읽기 모델로 만들고, 렌더러가 직접 규칙 상태를 수정하지 못하게 한다.
 - [ ] 무기/스킬/몬스터/방랑자/드롭/포탈/층을 Zod로 검증되는 데이터 객체로 정의한다.
-- [ ] 참조 이미지 사용 권한 체크리스트와 `assets/README.md` 출처 기록 생성.
-- [ ] 우클릭 브라우저 메뉴 방지, 입력 포커스 해제 시 공격 중단, 중복 키 정책 확정.
+- [x] 참조 이미지 사용 권한 체크리스트와 `assets/README.md` 출처 기록 생성.
+- [x] 우클릭 브라우저 메뉴 방지, 입력 포커스 해제 시 공격 중단, 중복 키 정책 확정.
 - [ ] 루트 시드에서 `floor-layout`, `wanderer-role`, `combat`, `loot`, `cosmetic` 서브 스트림을 파생하고 서로 소비 순서가 영향을 주지 않게 한다.
-- [ ] `saveVersion + rootSeed + snapshot + commandHistory` 저장 스키마와 마이그레이션 실패 시 안전 초기화 정책 정의.
-- [ ] Howler.js 오디오 잠금 해제 시점과 React 설정 UI↔Phaser 사운드 이벤트 연결 정의.
+- [x] `saveVersion + rootSeed + snapshot + commandHistory` 저장 스키마와 마이그레이션 실패 시 안전 초기화 정책 정의.
+- [x] Howler.js 오디오 잠금 해제 시점과 React 설정 UI↔Phaser 사운드 이벤트 연결 정의.
 
 **완료 게이트**
 
@@ -571,7 +571,7 @@ React는 타이틀·선택·대화·상점·결산처럼 문서형 UI를 담당�
 ## 12. 다음 작업
 
 1. [x] 5층 데모 범위, 기술 스택, 저장·배포·에셋 조달 방향 반영.
-2. [ ] P0 React/Phaser 앱 스캐폴드와 순수 TypeScript 엔진 계약 구현.
+2. [x] P0 React/Phaser 앱 스캐폴드와 순수 TypeScript 엔진 계약 구현.
 3. [ ] 루트 시드/서브 스트림, Zustand 이벤트 큐, Zod 저장 스키마를 테스트 우선으로 구현.
 4. [ ] 타이틀 화면의 독자 타워 콘셉트와 8방향 캐릭터 스프라이트 제작 파이프라인 확정.
 5. [ ] P1.1부터 체크포인트 단위로 구현·검증·커밋.

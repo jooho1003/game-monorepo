@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sample-game",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter=sample-game", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "spire-50-demo",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter=spire-50-demo", "dev"],
+      "port": 5174
+    }
+  ]
+}

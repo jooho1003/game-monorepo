@@ -1,0 +1,7 @@
+{
+  "extends": "@game/typescript-config/browser.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  },
+  "include": ["src"]
+}
