@@ -3,7 +3,7 @@ import { getWeaponDefinition } from "../../config/weapons.js";
 import { useGameStore } from "../../store/game-store.js";
 
 const dialogue = [
-  "도전자여, 이곳은 제50첨탑의 첫 번째 휴식처다. 정상은 아직 구름 너머에 있지.",
+  "도전자여, 이곳은 종말의 탑 첫 번째 휴식처다. 정상은 아직 구름 너머에 있지.",
   "층마다 마주치는 방랑자를 경계해라. 네 편이 될 수도, 몬스터와 함께 달려들 수도 있다.",
   "네 무기에 첫 각인을 새겼다. 전투장에서 숫자 1을 눌러 그 힘을 시험해라.",
 ] as const;

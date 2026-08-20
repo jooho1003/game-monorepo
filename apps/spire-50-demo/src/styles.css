@@ -1,3 +1,19 @@
+@font-face {
+  font-family: "Song Myung Local";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/song-myung/SongMyung-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Cinzel Local";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/cinzel/Cinzel-Variable.ttf") format("truetype");
+}
+
 :root {
   color: #edf3ea;
   background: #0a1016;
@@ -301,6 +317,254 @@ button:focus-visible {
   color: #b8c9c1;
   font-size: 11px;
   letter-spacing: 0.08em;
+}
+
+/* Title art direction: the supplied tower image carries the scene; UI stays quiet. */
+.title-screen {
+  isolation: isolate;
+  background:
+    linear-gradient(
+      90deg,
+      rgb(2 4 5 / 94%) 0%,
+      rgb(5 6 7 / 80%) 23%,
+      rgb(7 8 9 / 28%) 48%,
+      rgb(1 2 3 / 8%) 72%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(0 0 0 / 22%),
+      transparent 50%,
+      rgb(0 0 0 / 74%)
+    ),
+    url("/assets/title/tower-of-the-end.png") center center / cover no-repeat;
+  color: #ede8dd;
+}
+
+.title-screen::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 53% 39%, transparent 0 23%, rgb(0 0 0 / 24%) 74%),
+    linear-gradient(90deg, rgb(0 0 0 / 26%), transparent 55%);
+  box-shadow: inset 0 0 140px 26px rgb(0 0 0 / 72%);
+  content: "";
+  filter: none;
+  opacity: 1;
+  pointer-events: none;
+  transform: none;
+}
+
+.title-screen::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: clamp(40px, 5.1vw, 94px);
+  z-index: 0;
+  width: 1px;
+  height: auto;
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 5%,
+    #a8472c 42%,
+    transparent 94%
+  );
+  box-shadow: none;
+  content: "";
+  filter: none;
+  opacity: 0.44;
+  pointer-events: none;
+  transform: none;
+}
+
+.title-panel {
+  position: absolute;
+  top: 48%;
+  left: clamp(76px, 8.1vw, 154px);
+  z-index: 1;
+  width: min(510px, 42vw);
+  transform: translateY(-50%);
+}
+
+.title-panel__sigil {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 17px;
+  border: 1px solid #a66b4c;
+  transform: rotate(45deg);
+}
+
+.title-panel__sigil::before,
+.title-panel__sigil::after,
+.title-panel__sigil i {
+  position: absolute;
+  background: #c08c69;
+  content: "";
+}
+
+.title-panel__sigil::before {
+  inset: 6px 16px;
+}
+
+.title-panel__sigil::after {
+  inset: 16px 6px;
+}
+
+.title-panel__sigil i {
+  inset: 11px;
+  border: 1px solid #2e1510;
+  transform: rotate(45deg);
+}
+
+.title-panel__overtitle {
+  margin: 0 0 8px 4px;
+  color: #a48775;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.42em;
+}
+
+.title-panel h1 {
+  margin: 0;
+  color: #eee7d9;
+  font-family: "Song Myung Local", "Noto Serif KR", serif;
+  font-size: clamp(70px, 6.2vw, 112px);
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  line-height: 0.98;
+  text-shadow:
+    0 5px 4px rgb(0 0 0 / 78%),
+    0 0 36px rgb(0 0 0 / 78%),
+    0 0 2px #f3d8bc;
+  white-space: nowrap;
+}
+
+.title-panel__subtitle {
+  margin: 13px 0 31px 5px;
+  color: #a7988d;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.48em;
+}
+
+.floor-record {
+  display: grid;
+  grid-template-columns: auto auto minmax(30px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  width: min(430px, 100%);
+  margin-bottom: 30px;
+  color: #8f8178;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.13em;
+}
+
+.floor-record strong {
+  color: #d1b49b;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.floor-record i {
+  height: 1px;
+  background: linear-gradient(90deg, #855a4488, transparent);
+}
+
+.title-menu {
+  display: grid;
+  gap: 7px;
+  width: min(360px, 100%);
+}
+
+.title-menu__button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 24px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: 12px 18px 11px 22px;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid #84533b;
+  background: linear-gradient(90deg, rgb(16 12 11 / 88%), rgb(12 10 9 / 18%));
+  color: #d9d0c4;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    padding-left 180ms ease;
+}
+
+.title-menu__button::after {
+  position: absolute;
+  right: 100%;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, #d16a3d, transparent);
+  content: "";
+  transition: right 220ms ease;
+}
+
+.title-menu__button:hover:not(:disabled),
+.title-menu__button:focus-visible {
+  border-left-color: #d0794f;
+  color: #fff5e8;
+  padding-left: 30px;
+}
+
+.title-menu__button:hover:not(:disabled)::after,
+.title-menu__button:focus-visible::after {
+  right: 0;
+}
+
+.title-menu__button:disabled {
+  border-left-color: #403833;
+  color: #746b64;
+  cursor: not-allowed;
+  filter: saturate(0.45);
+}
+
+.title-menu__button span {
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.title-menu__button small {
+  color: #887c73;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.title-panel__hint {
+  margin: 15px 0 0 3px;
+  color: #756c66;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.title-screen__edition {
+  position: absolute;
+  right: 25px;
+  bottom: 19px;
+  z-index: 1;
+  margin: 0;
+  color: #625a54;
+  font-family: "Cinzel Local", Georgia, serif;
+  font-size: 8px;
+  letter-spacing: 0.22em;
 }
 
 .select-screen {

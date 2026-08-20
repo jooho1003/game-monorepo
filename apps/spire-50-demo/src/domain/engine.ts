@@ -34,7 +34,7 @@ export function createInitialSnapshot(): GameSnapshot {
     seed: 0,
     wandererRole: "ally",
     objective: "게임 시작을 눌러 탑에 도전하세요.",
-    notice: "제50첨탑이 도전자를 기다립니다.",
+    notice: "종말의 탑이 도전자를 기다립니다.",
   };
 }
 
@@ -51,6 +51,28 @@ export function transition(
           notice: "무기 하나를 선택하세요.",
         },
         events: [],
+      };
+
+    case "LOAD_GAME":
+      if (snapshot.seed === 0) {
+        return {
+          snapshot: {
+            ...snapshot,
+            screen: "title",
+            notice: "불러올 여정이 없습니다.",
+          },
+          events: [],
+        };
+      }
+      return {
+        snapshot: {
+          ...snapshot,
+          screen: "game",
+          zone: "rest",
+          dialogueOpen: false,
+          notice: "저장된 여정을 불러왔습니다.",
+        },
+        events: [{ type: "zone-entered", zone: "rest" }],
       };
 
     case "START_RUN": {

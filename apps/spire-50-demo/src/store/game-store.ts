@@ -21,9 +21,12 @@ interface GameStore {
 }
 
 const initialEnvelope = readSave();
+const initialSnapshot = initialEnvelope
+  ? { ...initialEnvelope.snapshot, screen: "title" as const }
+  : createInitialSnapshot();
 
 export const useGameStore = create<GameStore>((set, get) => ({
-  snapshot: initialEnvelope?.snapshot ?? createInitialSnapshot(),
+  snapshot: initialSnapshot,
   events: [],
   commandHistory: initialEnvelope?.commandHistory ?? [],
   dispatch: (command) => {

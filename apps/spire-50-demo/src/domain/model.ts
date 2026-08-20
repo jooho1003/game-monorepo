@@ -42,6 +42,7 @@ export type GameSnapshot = z.infer<typeof gameSnapshotSchema>;
 
 export type GameCommand =
   | { type: "OPEN_SELECT" }
+  | { type: "LOAD_GAME" }
   | { type: "START_RUN"; weapon: WeaponId; seed: number }
   | { type: "ADVANCE_DIALOGUE" }
   | { type: "ENTER_ZONE"; zone: ZoneId }

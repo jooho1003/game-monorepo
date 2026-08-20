@@ -57,4 +57,30 @@ describe("deterministic run shell", () => {
     expect(defeated.zone).toBe("rest");
     expect(defeated.hp).toBe(100);
   });
+
+  it("loads an existing run into the rest area", () => {
+    const started = transition(createInitialSnapshot(), {
+      type: "START_RUN",
+      weapon: "bow",
+      seed: 5026,
+    }).snapshot;
+    const loaded = transition(
+      { ...started, screen: "title", zone: "battle" },
+      { type: "LOAD_GAME" },
+    ).snapshot;
+
+    expect(loaded.screen).toBe("game");
+    expect(loaded.zone).toBe("rest");
+    expect(loaded.weapon).toBe("bow");
+    expect(loaded.seed).toBe(5026);
+  });
+
+  it("keeps the title open when there is no run to load", () => {
+    const loaded = transition(createInitialSnapshot(), {
+      type: "LOAD_GAME",
+    }).snapshot;
+
+    expect(loaded.screen).toBe("title");
+    expect(loaded.notice).toBe("불러올 여정이 없습니다.");
+  });
 });
