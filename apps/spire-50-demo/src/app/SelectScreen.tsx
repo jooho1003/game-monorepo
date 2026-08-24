@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { playSfx, setMusicContext } from "../audio/audio-manager.js";
 import { getWeaponDefinition, weaponDefinitions } from "../config/weapons.js";
 import type { WeaponId } from "../domain/model.js";
 import { useGameStore } from "../store/game-store.js";
@@ -8,7 +9,17 @@ export function SelectScreen() {
   const dispatch = useGameStore((state) => state.dispatch);
   const selected = getWeaponDefinition(selectedWeapon);
 
+  useEffect(() => {
+    setMusicContext("select");
+    for (const weapon of weaponDefinitions) {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = weapon.characterImage;
+    }
+  }, []);
+
   const startRun = () => {
+    playSfx("uiConfirm");
     dispatch({
       type: "START_RUN",
       weapon: selectedWeapon,
@@ -22,12 +33,15 @@ export function SelectScreen() {
         <button
           className="text-button"
           type="button"
-          onClick={() => dispatch({ type: "RETURN_TITLE" })}
+          onClick={() => {
+            playSfx("uiConfirm", { volume: 0.24 });
+            dispatch({ type: "RETURN_TITLE" });
+          }}
         >
           <span>←</span> BACK
         </button>
         <div className="select-header__brand">
-          <p>종말의 탑</p>
+          <p>The End&apos;s Tower</p>
           <strong>LOADOUT</strong>
         </div>
         <div className="select-header__progress">
@@ -56,7 +70,10 @@ export function SelectScreen() {
                   style={
                     { "--weapon-accent": weapon.accent } as React.CSSProperties
                   }
-                  onClick={() => setSelectedWeapon(weapon.id)}
+                  onClick={() => {
+                    playSfx("uiConfirm", { volume: 0.22 });
+                    setSelectedWeapon(weapon.id);
+                  }}
                 >
                   <img src={weapon.image} alt="" />
                   <span>
@@ -79,9 +96,23 @@ export function SelectScreen() {
           <div className="character-portrait">
             <div className="character-portrait__halo" aria-hidden="true" />
             <img
-              key={selected.id}
               src={selected.characterImage}
               alt={`${selected.name}을 장비한 에른`}
+              width={1024}
+              height={1536}
+              decoding="async"
+              loading="eager"
+              style={
+                {
+                  "--character-scale": selected.characterScale,
+                  "--character-offset-y": selected.characterOffsetY,
+                } as React.CSSProperties
+              }
+              onError={(event) => {
+                const image = event.currentTarget;
+                image.onerror = null;
+                image.src = "/assets/loadout/characters/ern-longsword.png";
+              }}
             />
             <span className="character-portrait__floor" aria-hidden="true" />
           </div>

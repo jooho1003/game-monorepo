@@ -9,6 +9,9 @@ build/
 # turbo
 .turbo/
 
+# local agent runtime
+.bkit/
+
 # env
 .env
 .env.local
@@ -17,4 +20,5 @@ build/
 # misc
 .DS_Store
 *.log
+*.exe
 .vercel

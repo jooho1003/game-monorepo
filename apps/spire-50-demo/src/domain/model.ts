@@ -12,6 +12,9 @@ export const screenSchema = z.enum(["title", "select", "game"]);
 export const zoneSchema = z.enum(["rest", "battle", "shop"]);
 export const weaponSchema = z.enum(weaponIds);
 export const wandererRoleSchema = z.enum(["ally", "enemy"]);
+export const missionResultSchema = z
+  .enum(["failure-timeout", "failure-spotted"])
+  .nullable();
 
 export type ScreenId = z.infer<typeof screenSchema>;
 export type ZoneId = z.infer<typeof zoneSchema>;
@@ -25,10 +28,23 @@ export const gameSnapshotSchema = z.object({
   floor: z.number().int().min(1).max(50),
   highestFloor: z.number().int().min(1).max(50),
   level: z.number().int().min(1),
+  experience: z.number().min(0).default(0),
+  experienceToNextLevel: z.number().int().positive().default(100),
+  skillPoints: z.number().int().min(0).default(0),
   weapon: weaponSchema,
   hp: z.number().min(0).max(100),
   mp: z.number().min(0).max(100),
   gold: z.number().int().min(0),
+  inventory: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        quantity: z.number().int().min(0),
+        description: z.string(),
+      }),
+    )
+    .default([]),
   skillUnlocked: z.boolean(),
   dialogueOpen: z.boolean(),
   dialogueIndex: z.number().int().min(0),
@@ -36,6 +52,7 @@ export const gameSnapshotSchema = z.object({
   wandererRole: wandererRoleSchema,
   objective: z.string(),
   notice: z.string(),
+  lastMissionResult: missionResultSchema.default(null),
 });
 
 export type GameSnapshot = z.infer<typeof gameSnapshotSchema>;
@@ -48,6 +65,11 @@ export type GameCommand =
   | { type: "ENTER_ZONE"; zone: ZoneId }
   | { type: "TAKE_DAMAGE"; amount: number }
   | { type: "USE_SKILL"; manaCost: number }
+  | { type: "RECOVER_RESOURCES"; elapsedMs: number }
+  | { type: "GAIN_EXPERIENCE"; amount: number }
+  | { type: "COMPLETE_FLOOR" }
+  | { type: "FAIL_FIFTH_FLOOR"; reason: "timeout" | "spotted" }
+  | { type: "ACK_MISSION_RESULT" }
   | { type: "COLLECT_GOLD"; amount: number }
   | { type: "BUY_HEAL"; price: number; amount: number }
   | { type: "RETURN_TITLE" };
@@ -58,6 +80,11 @@ export type GameEvent =
   | { type: "zone-entered"; zone: ZoneId }
   | { type: "player-damaged"; amount: number }
   | { type: "skill-used" }
+  | { type: "resources-recovered"; hp: number; mp: number }
+  | { type: "experience-gained"; amount: number }
+  | { type: "level-up"; level: number }
+  | { type: "floor-cleared"; floor: number }
+  | { type: "mission-failed"; reason: "timeout" | "spotted" }
   | { type: "gold-collected"; amount: number };
 
 export const commandRecordSchema = z.object({

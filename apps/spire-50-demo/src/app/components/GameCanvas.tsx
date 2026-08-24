@@ -41,6 +41,7 @@ export function GameCanvas() {
       ref={containerRef}
       className="game-canvas"
       aria-label={`${zoneLabel(zone)} 게임 화면`}
+      tabIndex={0}
     />
   );
 }
