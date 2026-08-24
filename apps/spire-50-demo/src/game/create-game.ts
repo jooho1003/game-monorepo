@@ -8,8 +8,10 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
     width: 1280,
     height: 720,
     backgroundColor: "#101923",
+    pixelArt: false,
     render: {
       antialias: true,
+      antialiasGL: true,
       roundPixels: true,
     },
     scale: {

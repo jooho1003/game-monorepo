@@ -1,4 +1,9 @@
-import { unlockAudio } from "../audio/audio-manager.js";
+import { useEffect } from "react";
+import {
+  playSfx,
+  setMusicContext,
+  unlockAudio,
+} from "../audio/audio-manager.js";
 import { useGameStore } from "../store/game-store.js";
 
 export function TitleScreen() {
@@ -6,14 +11,18 @@ export function TitleScreen() {
   const hasSave = useGameStore((state) => state.snapshot.seed !== 0);
   const dispatch = useGameStore((state) => state.dispatch);
 
+  useEffect(() => setMusicContext("title"), []);
+
   const startNewGame = () => {
     unlockAudio();
+    playSfx("uiConfirm");
     dispatch({ type: "OPEN_SELECT" });
   };
 
   const loadGame = () => {
     if (!hasSave) return;
     unlockAudio();
+    playSfx("uiConfirm");
     dispatch({ type: "LOAD_GAME" });
   };
 
@@ -24,8 +33,7 @@ export function TitleScreen() {
           <i />
         </div>
         <p className="title-panel__overtitle">THE LAST ASCENT</p>
-        <h1 id="game-title">종말의 탑</h1>
-        <p className="title-panel__subtitle">TOWER OF THE END</p>
+        <h1 id="game-title">The End&apos;s Tower</h1>
 
         <div className="floor-record" aria-label="탑 진행도">
           <span>HIGHEST FLOOR</span>

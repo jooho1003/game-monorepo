@@ -83,4 +83,71 @@ describe("deterministic run shell", () => {
     expect(loaded.screen).toBe("title");
     expect(loaded.notice).toBe("불러올 여정이 없습니다.");
   });
+
+  it("recovers hp and mp using per-minute rates", () => {
+    const snapshot = { ...createInitialSnapshot(), hp: 40, mp: 20 };
+    const recovered = transition(snapshot, {
+      type: "RECOVER_RESOURCES",
+      elapsedMs: 30_000,
+    }).snapshot;
+
+    expect(recovered.hp).toBe(43);
+    expect(recovered.mp).toBe(26);
+  });
+
+  it("levels up and carries remaining experience", () => {
+    const leveled = transition(createInitialSnapshot(), {
+      type: "GAIN_EXPERIENCE",
+      amount: 130,
+    }).snapshot;
+
+    expect(leveled.level).toBe(2);
+    expect(leveled.experience).toBe(30);
+    expect(leveled.experienceToNextLevel).toBe(145);
+    expect(leveled.skillPoints).toBe(1);
+  });
+
+  it("opens the next floor only after a battle clear", () => {
+    const battle = transition(createInitialSnapshot(), {
+      type: "ENTER_ZONE",
+      zone: "battle",
+    }).snapshot;
+    const completed = transition(battle, { type: "COMPLETE_FLOOR" }).snapshot;
+
+    expect(completed.zone).toBe("rest");
+    expect(completed.floor).toBe(2);
+    expect(completed.highestFloor).toBe(2);
+  });
+
+  it("returns a failed fifth-floor mission to the rest area without progress", () => {
+    const battle = {
+      ...createInitialSnapshot(),
+      floor: 5,
+      highestFloor: 5,
+      zone: "battle" as const,
+      hp: 12,
+    };
+    const failed = transition(battle, {
+      type: "FAIL_FIFTH_FLOOR",
+      reason: "spotted",
+    }).snapshot;
+
+    expect(failed).toMatchObject({
+      zone: "rest",
+      floor: 5,
+      highestFloor: 5,
+      hp: 100,
+      lastMissionResult: "failure-spotted",
+    });
+  });
+
+  it("ignores fifth-floor failure commands outside its mission", () => {
+    const initial = createInitialSnapshot();
+    expect(
+      transition(initial, {
+        type: "FAIL_FIFTH_FLOOR",
+        reason: "timeout",
+      }).snapshot,
+    ).toBe(initial);
+  });
 });

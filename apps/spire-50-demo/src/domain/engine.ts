@@ -11,6 +11,13 @@ export interface TransitionResult {
   events: GameEvent[];
 }
 
+export const HP_REGEN_PER_MINUTE = 6;
+export const MP_REGEN_PER_MINUTE = 12;
+
+export function experienceRequiredForLevel(level: number): number {
+  return 100 + Math.max(0, level - 1) * 45;
+}
+
 export function wandererRoleFromSeed(seed: number): WandererRole {
   const relationRng = createRng((seed ^ 0x5f3759df) >>> 0);
   return relationRng.next() < 0.55 ? "ally" : "enemy";
@@ -24,17 +31,35 @@ export function createInitialSnapshot(): GameSnapshot {
     floor: 1,
     highestFloor: 1,
     level: 1,
+    experience: 0,
+    experienceToNextLevel: experienceRequiredForLevel(1),
+    skillPoints: 0,
     weapon: "longsword",
     hp: 100,
     mp: 100,
     gold: 30,
+    inventory: [
+      {
+        id: "small-potion",
+        name: "작은 회복약",
+        quantity: 2,
+        description: "전투 사이에 체력을 보충하는 붉은 약입니다.",
+      },
+      {
+        id: "tower-key",
+        name: "낡은 탑 열쇠",
+        quantity: 1,
+        description: "오르반에게 받은 층계 게이트의 열쇠입니다.",
+      },
+    ],
     skillUnlocked: false,
     dialogueOpen: false,
     dialogueIndex: 0,
     seed: 0,
     wandererRole: "ally",
     objective: "게임 시작을 눌러 탑에 도전하세요.",
-    notice: "종말의 탑이 도전자를 기다립니다.",
+    notice: "The End's Tower가 도전자를 기다립니다.",
+    lastMissionResult: null,
   };
 }
 
@@ -123,7 +148,9 @@ export function transition(
     case "ENTER_ZONE": {
       const objective =
         command.zone === "battle"
-          ? "적을 쓰러뜨리고 Z로 전리품을 회수하세요."
+          ? snapshot.floor === 5
+            ? "외눈박이의 시야를 막고 바위문 너머 바닷가 게이트로 탈출하세요."
+            : "적을 쓰러뜨리고 Z로 전리품을 회수하세요."
           : command.zone === "shop"
             ? "골드로 회복한 뒤 휴식처로 돌아가세요."
             : "전투 포탈 또는 상점 포탈을 이용하세요.";
@@ -133,6 +160,7 @@ export function transition(
           zone: command.zone,
           objective,
           notice: `${zoneLabel(command.zone)}에 진입했습니다.`,
+          lastMissionResult: null,
         },
         events: [{ type: "zone-entered", zone: command.zone }],
       };
@@ -185,6 +213,125 @@ export function transition(
           notice: "스킬을 사용했습니다.",
         },
         events: [{ type: "skill-used" }],
+      };
+
+    case "RECOVER_RESOURCES": {
+      const elapsedMinutes = Math.max(0, command.elapsedMs) / 60_000;
+      const hp = clamp(
+        snapshot.hp + HP_REGEN_PER_MINUTE * elapsedMinutes,
+        0,
+        100,
+      );
+      const mp = clamp(
+        snapshot.mp + MP_REGEN_PER_MINUTE * elapsedMinutes,
+        0,
+        100,
+      );
+      if (hp === snapshot.hp && mp === snapshot.mp) {
+        return { snapshot, events: [] };
+      }
+      return {
+        snapshot: { ...snapshot, hp, mp },
+        events: [
+          {
+            type: "resources-recovered",
+            hp: hp - snapshot.hp,
+            mp: mp - snapshot.mp,
+          },
+        ],
+      };
+    }
+
+    case "GAIN_EXPERIENCE": {
+      const amount = Math.max(0, Math.floor(command.amount));
+      if (amount === 0) return { snapshot, events: [] };
+      let experience = snapshot.experience + amount;
+      let level = snapshot.level;
+      let experienceToNextLevel = snapshot.experienceToNextLevel;
+      let levelsGained = 0;
+      while (experience >= experienceToNextLevel) {
+        experience -= experienceToNextLevel;
+        level += 1;
+        levelsGained += 1;
+        experienceToNextLevel = experienceRequiredForLevel(level);
+      }
+      const events: GameEvent[] = [{ type: "experience-gained", amount }];
+      if (levelsGained > 0) events.push({ type: "level-up", level });
+      return {
+        snapshot: {
+          ...snapshot,
+          experience,
+          experienceToNextLevel,
+          level,
+          skillPoints: snapshot.skillPoints + levelsGained,
+          hp: levelsGained > 0 ? 100 : snapshot.hp,
+          mp: levelsGained > 0 ? 100 : snapshot.mp,
+          notice:
+            levelsGained > 0
+              ? `레벨 ${level} 달성! 스킬 포인트 ${levelsGained}을 획득했습니다.`
+              : `${amount} 경험치를 획득했습니다.`,
+        },
+        events,
+      };
+    }
+
+    case "COMPLETE_FLOOR": {
+      if (snapshot.zone !== "battle") return { snapshot, events: [] };
+      const clearedFloor = snapshot.floor;
+      const nextFloor = Math.min(50, clearedFloor + 1);
+      return {
+        snapshot: {
+          ...snapshot,
+          zone: "rest",
+          floor: nextFloor,
+          highestFloor: Math.max(snapshot.highestFloor, nextFloor),
+          objective:
+            clearedFloor >= 50
+              ? "탑 정상 정복을 완료했습니다."
+              : `${nextFloor}층 공략 게이트로 이동하세요.`,
+          notice:
+            clearedFloor >= 50
+              ? "50층의 시련을 모두 끝냈습니다."
+              : `${clearedFloor}층 클리어 · ${nextFloor}층이 열렸습니다.`,
+          lastMissionResult: null,
+        },
+        events: [
+          { type: "floor-cleared", floor: clearedFloor },
+          { type: "zone-entered", zone: "rest" },
+        ],
+      };
+    }
+
+    case "FAIL_FIFTH_FLOOR": {
+      if (snapshot.zone !== "battle" || snapshot.floor !== 5) {
+        return { snapshot, events: [] };
+      }
+      const spotted = command.reason === "spotted";
+      return {
+        snapshot: {
+          ...snapshot,
+          zone: "rest",
+          hp: 100,
+          objective: "5층 공략 게이트에서 외눈박이의 동굴에 다시 도전하세요.",
+          notice: spotted
+            ? "외눈박이의 손에 붙잡혀 사망한 뒤 휴식처로 귀환했습니다."
+            : "5분 안에 탈출하지 못해 휴식처로 귀환했습니다.",
+          lastMissionResult: spotted
+            ? "failure-spotted"
+            : "failure-timeout",
+        },
+        events: [
+          { type: "mission-failed", reason: command.reason },
+          { type: "zone-entered", zone: "rest" },
+        ],
+      };
+    }
+
+    case "ACK_MISSION_RESULT":
+      if (snapshot.lastMissionResult === null) return { snapshot, events: [] };
+      return {
+        snapshot: { ...snapshot, lastMissionResult: null },
+        events: [],
       };
 
     case "COLLECT_GOLD":
