@@ -6,14 +6,17 @@ import {
   CAVE_EXIT,
   CAVE_GATE_COLLIDER,
   CAVE_PLAYER_SPAWN,
+  CAVE_STRUCTURE_COLLIDERS,
   CYCLOPS_DISPLAY_SIZE,
   CYCLOPS_POSITION,
   doCaveBodiesOverlap,
   PLAYER_DISPLAY_SIZE,
   SHEEP_INSIDE_SPAWNS,
   isPointInCaveExit,
+  isPointInCyclopsStrike,
   isPointInCyclopsVision,
   movementAvoidanceCandidates,
+  sheepYieldTarget,
 } from "./fifth-floor-layout.js";
 
 describe("fifth-floor cave layout", () => {
@@ -22,12 +25,46 @@ describe("fifth-floor cave layout", () => {
     expect(SHEEP_INSIDE_SPAWNS).toHaveLength(20);
     expect(CYCLOPS_DISPLAY_SIZE).toBe(PLAYER_DISPLAY_SIZE * 6);
     expect(CYCLOPS_POSITION.x).toBeGreaterThan(CAVE_PLAYER_SPAWN.x);
+    expect(ALLY_SPAWNS.every((point) => point.x < 600)).toBe(true);
+    expect(ALLY_SPAWNS.every((point) => point.y < CAVE_PLAYER_SPAWN.y)).toBe(
+      true,
+    );
+    for (let first = 0; first < ALLY_SPAWNS.length; first += 1) {
+      for (let second = first + 1; second < ALLY_SPAWNS.length; second += 1) {
+        expect(
+          Math.hypot(
+            ALLY_SPAWNS[first]!.x - ALLY_SPAWNS[second]!.x,
+            ALLY_SPAWNS[first]!.y - ALLY_SPAWNS[second]!.y,
+          ),
+        ).toBeGreaterThanOrEqual(50);
+      }
+    }
   });
 
   it("places the stone door in front of the exit", () => {
     expect(CAVE_GATE_COLLIDER.x).toBeLessThan(CAVE_EXIT.x);
     expect(isPointInCaveExit({ x: CAVE_EXIT.x + 10, y: 800 })).toBe(true);
     expect(isPointInCaveExit(CAVE_PLAYER_SPAWN)).toBe(false);
+  });
+
+  it("seals the cave-to-beach wall everywhere except the rock-door opening", () => {
+    const blockedByStructure = (x: number, y: number) =>
+      CAVE_STRUCTURE_COLLIDERS.some(
+        (rect) =>
+          x >= rect.x &&
+          x <= rect.x + rect.width &&
+          y >= rect.y &&
+          y <= rect.y + rect.height,
+      );
+    expect(blockedByStructure(2500, 400)).toBe(true);
+    expect(blockedByStructure(2500, 1200)).toBe(true);
+    expect(blockedByStructure(2500, 800)).toBe(false);
+    expect(
+      2500 >= CAVE_GATE_COLLIDER.x &&
+        2500 <= CAVE_GATE_COLLIDER.x + CAVE_GATE_COLLIDER.width &&
+        800 >= CAVE_GATE_COLLIDER.y &&
+        800 <= CAVE_GATE_COLLIDER.y + CAVE_GATE_COLLIDER.height,
+    ).toBe(true);
   });
 
   it("extends the cave exit into a separate beach with a rest gate", () => {
@@ -39,18 +76,12 @@ describe("fifth-floor cave layout", () => {
   });
 
   it("detects only awake targets inside the limited vision cone", () => {
-    expect(isPointInCyclopsVision({ x: 1700, y: 800 }, "watching")).toBe(
-      true,
-    );
-    expect(isPointInCyclopsVision({ x: 1700, y: 800 }, "sleeping")).toBe(
-      false,
-    );
+    expect(isPointInCyclopsVision({ x: 1700, y: 800 }, "watching")).toBe(true);
+    expect(isPointInCyclopsVision({ x: 1700, y: 800 }, "sleeping")).toBe(false);
     expect(isPointInCyclopsVision({ x: 2160, y: 1300 }, "watching")).toBe(
       false,
     );
-    expect(isPointInCyclopsVision({ x: 900, y: 800 }, "watching")).toBe(
-      false,
-    );
+    expect(isPointInCyclopsVision({ x: 900, y: 800 }, "watching")).toBe(false);
     expect(
       isPointInCyclopsVision(
         { x: 1200, y: 800 },
@@ -59,6 +90,12 @@ describe("fifth-floor cave layout", () => {
         0,
       ),
     ).toBe(true);
+  });
+
+  it("damages only targets that remain inside the telegraphed strike", () => {
+    const target = { x: 600, y: 500 };
+    expect(isPointInCyclopsStrike({ x: 650, y: 500 }, target, 82)).toBe(true);
+    expect(isPointInCyclopsStrike({ x: 683, y: 500 }, target, 82)).toBe(false);
   });
 
   it("treats mission actors as separate solid bodies without rejecting tangency", () => {
@@ -77,5 +114,21 @@ describe("fifth-floor cave layout", () => {
     expect(clockwise[0]).toEqual({ x: 1, y: 0 });
     expect(clockwise[1]!.y).toBeGreaterThan(0);
     expect(counterClockwise[1]!.y).toBeLessThan(0);
+  });
+
+  it("moves sheep sideways when a character approaches", () => {
+    const clockwise = sheepYieldTarget(
+      { x: 100, y: 100 },
+      { x: 40, y: 100 },
+      true,
+    );
+    const counterClockwise = sheepYieldTarget(
+      { x: 100, y: 100 },
+      { x: 40, y: 100 },
+      false,
+    );
+    expect(clockwise.x).toBeGreaterThan(100);
+    expect(clockwise.y).toBeGreaterThan(100);
+    expect(counterClockwise.y).toBeLessThan(100);
   });
 });

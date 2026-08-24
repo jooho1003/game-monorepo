@@ -6,20 +6,20 @@ export const FIFTH_FLOOR_ALLY_COUNT = 15;
 export const FIFTH_FLOOR_SHEEP_COUNT = 20;
 export const CYCLOPS_MEAL_SIZE = 2;
 export const CYCLOPS_MAX_HP = 1_200;
-export const CYCLOPS_EYE_EXPOSED_DURATION_MS = 4_000;
 export const CYCLOPS_BLINDED_DURATION_MS = 8_000;
 
 export type FifthFloorPhase = "watching" | "sleeping" | "gate-open";
 export type FlockLocation = "inside" | "outside";
 export type FlockDirection = "out" | "in";
-export type SacrificeDecision = "pending" | "accepted" | "fighting";
+export type FifthFloorStrategy =
+  | "pending"
+  | "stealth-selecting"
+  | "stealth-charging"
+  | "stealth"
+  | "fighting";
 export type FifthFloorMissionStatus = "active" | "escaped" | "failed";
 export type FifthFloorFailureReason = "timeout" | "spotted";
-export type CyclopsWeakPoint =
-  | "dormant"
-  | "primed"
-  | "exposed"
-  | "blinded";
+export type CyclopsWeakPoint = "dormant" | "primed" | "blinded";
 
 export interface FifthFloorMissionState {
   status: FifthFloorMissionStatus;
@@ -31,17 +31,23 @@ export interface FifthFloorMissionState {
   sheepCount: number;
   flockLocation: FlockLocation;
   flockDirection: FlockDirection;
-  sacrificeDecision: SacrificeDecision;
+  strategy: FifthFloorStrategy;
+  activeSoldierIds: readonly number[];
+  selectedSacrificeIds: readonly number[];
   cycle: number;
   bossHp: number;
   bossMaxHp: number;
   weakPoint: CyclopsWeakPoint;
   weakPointRemainingMs: number;
   reachedBeach: boolean;
+  alliesAtBeach: number;
 }
 
 export type FifthFloorMissionEvent =
-  | { type: "allies-sacrificed"; count: number; voluntary: boolean }
+  | { type: "allies-lost"; count: number }
+  | { type: "charge-commanded" }
+  | { type: "sacrifice-charge-commanded"; soldierIds: readonly number[] }
+  | { type: "allies-sacrificed"; soldierIds: readonly number[] }
   | { type: "phase-changed"; phase: FifthFloorPhase }
   | {
       type: "flock-moved";
@@ -50,7 +56,6 @@ export type FifthFloorMissionEvent =
     }
   | { type: "mission-escaped" }
   | { type: "mission-failed"; reason: FifthFloorFailureReason }
-  | { type: "weak-point-exposed" }
   | { type: "vision-obscured"; durationMs: number }
   | { type: "boss-damaged"; amount: number; hp: number }
   | { type: "boss-staggered" }
@@ -72,36 +77,136 @@ export function createFifthFloorMission(): FifthFloorMissionState {
     sheepCount: FIFTH_FLOOR_SHEEP_COUNT,
     flockLocation: "inside",
     flockDirection: "out",
-    sacrificeDecision: "pending",
+    strategy: "pending",
+    activeSoldierIds: Array.from(
+      { length: FIFTH_FLOOR_ALLY_COUNT },
+      (_, index) => index,
+    ),
+    selectedSacrificeIds: [],
     cycle: 1,
     bossHp: CYCLOPS_MAX_HP,
     bossMaxHp: CYCLOPS_MAX_HP,
     weakPoint: "dormant",
     weakPointRemainingMs: 0,
     reachedBeach: false,
+    alliesAtBeach: 0,
   };
 }
 
-export function chooseFifthFloorSacrifice(
+export function chooseFifthFloorStrategy(
   state: FifthFloorMissionState,
-  accept: boolean,
+  stealth: boolean,
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
     state.phase !== "watching" ||
-    state.sacrificeDecision !== "pending"
+    state.strategy !== "pending"
   ) {
     return { state, events: [] };
   }
 
-  if (!accept) {
+  if (!stealth) {
     return {
-      state: { ...state, sacrificeDecision: "fighting" },
-      events: [],
+      state: {
+        ...state,
+        strategy: "fighting",
+        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      },
+      events: [{ type: "charge-commanded" }],
     };
   }
 
-  return beginCyclopsSleep(state, true);
+  return {
+    state: {
+      ...state,
+      strategy: "stealth-selecting",
+      selectedSacrificeIds: [],
+    },
+    events: [],
+  };
+}
+
+export function toggleFifthFloorSacrifice(
+  state: FifthFloorMissionState,
+  soldierId: number,
+): FifthFloorMissionResult {
+  if (
+    state.status !== "active" ||
+    state.phase !== "watching" ||
+    state.strategy !== "stealth-selecting" ||
+    !Number.isInteger(soldierId) ||
+    !state.activeSoldierIds.includes(soldierId)
+  ) {
+    return { state, events: [] };
+  }
+  const selected = state.selectedSacrificeIds.includes(soldierId)
+    ? state.selectedSacrificeIds.filter((id) => id !== soldierId)
+    : state.selectedSacrificeIds.length < CYCLOPS_MEAL_SIZE
+      ? [...state.selectedSacrificeIds, soldierId]
+      : state.selectedSacrificeIds;
+  if (selected === state.selectedSacrificeIds) return { state, events: [] };
+  return { state: { ...state, selectedSacrificeIds: selected }, events: [] };
+}
+
+export function commandFifthFloorSacrificeCharge(
+  state: FifthFloorMissionState,
+): FifthFloorMissionResult {
+  if (
+    state.status !== "active" ||
+    state.phase !== "watching" ||
+    state.strategy !== "stealth-selecting" ||
+    state.selectedSacrificeIds.length !== CYCLOPS_MEAL_SIZE
+  ) {
+    return { state, events: [] };
+  }
+  return {
+    state: {
+      ...state,
+      strategy: "stealth-charging",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+    },
+    events: [
+      {
+        type: "sacrifice-charge-commanded",
+        soldierIds: state.selectedSacrificeIds,
+      },
+    ],
+  };
+}
+
+export function completeFifthFloorSacrifice(
+  state: FifthFloorMissionState,
+): FifthFloorMissionResult {
+  if (
+    state.status !== "active" ||
+    state.phase !== "watching" ||
+    state.strategy !== "stealth-charging" ||
+    state.selectedSacrificeIds.length !== CYCLOPS_MEAL_SIZE
+  ) {
+    return { state, events: [] };
+  }
+  const soldierIds = state.selectedSacrificeIds.filter((id) =>
+    state.activeSoldierIds.includes(id),
+  );
+  if (soldierIds.length !== CYCLOPS_MEAL_SIZE) return { state, events: [] };
+  const activeSoldierIds = state.activeSoldierIds.filter(
+    (id) => !soldierIds.includes(id),
+  );
+  const sleeping = beginCyclopsSleep({
+    ...state,
+    strategy: "stealth",
+    activeSoldierIds,
+    selectedSacrificeIds: [],
+    alliesRemaining: activeSoldierIds.length,
+    alliesAtBeach: Math.min(state.alliesAtBeach, activeSoldierIds.length),
+  });
+  return {
+    state: sleeping.state,
+    events: [
+      { type: "allies-sacrificed", soldierIds },
+      ...sleeping.events,
+    ],
+  };
 }
 
 export function advanceFifthFloorMission(
@@ -121,6 +226,25 @@ export function advanceFifthFloorMission(
   const events: FifthFloorMissionEvent[] = [];
 
   while (unconsumedMs > 0 && current.status === "active") {
+    if (
+      current.phase === "watching" &&
+      current.strategy !== "fighting"
+    ) {
+      const step = Math.min(unconsumedMs, current.remainingMs);
+      current = {
+        ...current,
+        remainingMs: current.remainingMs - step,
+        weakPointRemainingMs: Math.max(0, current.weakPointRemainingMs - step),
+      };
+      unconsumedMs -= step;
+      if (current.remainingMs <= 0) {
+        const failure = failFifthFloorMission(current, "timeout");
+        current = failure.state;
+        events.push(...failure.events);
+      }
+      break;
+    }
+
     const step = Math.min(
       unconsumedMs,
       current.remainingMs,
@@ -142,10 +266,7 @@ export function advanceFifthFloorMission(
       break;
     }
 
-    if (
-      current.weakPointRemainingMs <= 0 &&
-      (current.weakPoint === "exposed" || current.weakPoint === "blinded")
-    ) {
+    if (current.weakPointRemainingMs <= 0 && current.weakPoint === "blinded") {
       current = {
         ...current,
         weakPoint: "dormant",
@@ -156,7 +277,14 @@ export function advanceFifthFloorMission(
     if (current.phaseRemainingMs > 0) break;
 
     if (current.phase === "watching") {
-      if (current.sacrificeDecision === "fighting") {
+      if (current.strategy === "fighting") {
+        if (current.alliesRemaining > 0) {
+          current = {
+            ...current,
+            phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+          };
+          continue;
+        }
         current = {
           ...current,
           phase: "gate-open",
@@ -165,9 +293,10 @@ export function advanceFifthFloorMission(
         events.push({ type: "phase-changed", phase: "gate-open" });
         continue;
       }
-      const sleep = beginCyclopsSleep(current, false);
-      current = sleep.state;
-      events.push(...sleep.events);
+      current = {
+        ...current,
+        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      };
       continue;
     }
 
@@ -193,8 +322,10 @@ export function advanceFifthFloorMission(
       phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
       flockLocation,
       flockDirection: nextDirection,
-      sacrificeDecision: "pending",
+      strategy: "pending",
+      selectedSacrificeIds: [],
       cycle: current.cycle + 1,
+      alliesAtBeach: 0,
     };
     events.push(
       { type: "flock-moved", location: flockLocation, nextDirection },
@@ -210,7 +341,9 @@ export function escapeFifthFloorMission(
 ): FifthFloorMissionResult {
   if (state.status !== "active") return { state, events: [] };
   if (state.remainingMs <= 0) return failFifthFloorMission(state, "timeout");
-  if (!state.reachedBeach) return { state, events: [] };
+  if (!state.reachedBeach || state.alliesAtBeach < state.alliesRemaining) {
+    return { state, events: [] };
+  }
   return {
     state: { ...state, status: "escaped" },
     events: [{ type: "mission-escaped" }],
@@ -229,6 +362,68 @@ export function reachFifthFloorBeach(
   };
 }
 
+export function updateFifthFloorAlliesAtBeach(
+  state: FifthFloorMissionState,
+  count: number,
+): FifthFloorMissionResult {
+  if (state.status !== "active") return { state, events: [] };
+  const alliesAtBeach = Math.max(
+    0,
+    Math.min(state.alliesRemaining, Math.trunc(count)),
+  );
+  if (alliesAtBeach === state.alliesAtBeach) return { state, events: [] };
+  return { state: { ...state, alliesAtBeach }, events: [] };
+}
+
+export function loseFifthFloorAllies(
+  state: FifthFloorMissionState,
+  count: number,
+): FifthFloorMissionResult {
+  if (state.status !== "active") return { state, events: [] };
+  const lost = Math.max(0, Math.min(state.alliesRemaining, Math.trunc(count)));
+  if (lost === 0) return { state, events: [] };
+  const activeSoldierIds = state.activeSoldierIds.slice(0, -lost);
+  const alliesRemaining = activeSoldierIds.length;
+  return {
+    state: {
+      ...state,
+      activeSoldierIds,
+      selectedSacrificeIds: state.selectedSacrificeIds.filter((id) =>
+        activeSoldierIds.includes(id),
+      ),
+      alliesRemaining,
+      alliesAtBeach: Math.min(state.alliesAtBeach, alliesRemaining),
+    },
+    events: [{ type: "allies-lost", count: lost }],
+  };
+}
+
+export function loseFifthFloorSoldiers(
+  state: FifthFloorMissionState,
+  soldierIds: readonly number[],
+): FifthFloorMissionResult {
+  if (state.status !== "active") return { state, events: [] };
+  const lostIds = new Set(
+    soldierIds.filter((id) => state.activeSoldierIds.includes(id)),
+  );
+  if (lostIds.size === 0) return { state, events: [] };
+  const activeSoldierIds = state.activeSoldierIds.filter(
+    (id) => !lostIds.has(id),
+  );
+  return {
+    state: {
+      ...state,
+      activeSoldierIds,
+      selectedSacrificeIds: state.selectedSacrificeIds.filter((id) =>
+        activeSoldierIds.includes(id),
+      ),
+      alliesRemaining: activeSoldierIds.length,
+      alliesAtBeach: Math.min(state.alliesAtBeach, activeSoldierIds.length),
+    },
+    events: [{ type: "allies-lost", count: lostIds.size }],
+  };
+}
+
 export function hitCyclopsWithBasicAttack(
   state: FifthFloorMissionState,
   damage: number,
@@ -236,33 +431,31 @@ export function hitCyclopsWithBasicAttack(
 ): FifthFloorMissionResult {
   if (state.status !== "active") return { state, events: [] };
 
-  if (state.phase === "sleeping" && state.weakPoint === "primed") {
-    return {
-      state: {
-        ...state,
-        phase: "watching",
-        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
-        weakPoint: "exposed",
-        weakPointRemainingMs: CYCLOPS_EYE_EXPOSED_DURATION_MS,
-      },
-      events: [
-        { type: "phase-changed", phase: "watching" },
-        { type: "weak-point-exposed" },
-      ],
-    };
-  }
-
-  if (state.weakPoint === "exposed" && aimedAtEye) {
+  if (
+    state.phase === "sleeping" &&
+    state.weakPoint === "primed" &&
+    aimedAtEye
+  ) {
     const hit = damageCyclops(state, Math.max(1, damage * 3));
+    const defeated = hit.state.bossHp === 0;
     return {
       state: {
         ...hit.state,
+        phase: "gate-open",
+        phaseRemainingMs: defeated
+          ? CYCLOPS_GATE_OPEN_DURATION_MS
+          : CYCLOPS_BLINDED_DURATION_MS,
         weakPoint: "blinded",
-        weakPointRemainingMs: CYCLOPS_BLINDED_DURATION_MS,
+        weakPointRemainingMs: defeated
+          ? CYCLOPS_GATE_OPEN_DURATION_MS
+          : CYCLOPS_BLINDED_DURATION_MS,
       },
       events: [
         ...hit.events,
         { type: "vision-obscured", durationMs: CYCLOPS_BLINDED_DURATION_MS },
+        ...(defeated
+          ? []
+          : ([{ type: "phase-changed", phase: "gate-open" }] as const)),
       ],
     };
   }
@@ -299,23 +492,16 @@ export function isCyclopsVisionActive(state: FifthFloorMissionState): boolean {
 
 function beginCyclopsSleep(
   state: FifthFloorMissionState,
-  voluntary: boolean,
 ): FifthFloorMissionResult {
-  const count = Math.min(CYCLOPS_MEAL_SIZE, state.alliesRemaining);
   return {
     state: {
       ...state,
       phase: "sleeping",
       phaseRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
-      alliesRemaining: state.alliesRemaining - count,
-      sacrificeDecision: voluntary ? "accepted" : state.sacrificeDecision,
       weakPoint: "primed",
       weakPointRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
     },
-    events: [
-      { type: "allies-sacrificed", count, voluntary },
-      { type: "phase-changed", phase: "sleeping" },
-    ],
+    events: [{ type: "phase-changed", phase: "sleeping" }],
   };
 }
 

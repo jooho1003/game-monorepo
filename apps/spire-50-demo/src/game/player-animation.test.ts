@@ -11,26 +11,28 @@ import {
 } from "./player-animation.js";
 
 describe("player directional action textures", () => {
-  it("uses the authored frame that faces the attack direction for every weapon", () => {
+  it("uses authored attacks and mirrors skills symmetrically on the west side", () => {
     for (const weaponId of weaponIds) {
-      for (const action of ["attack", "skill"] as const) {
-        expect(playerActionTextureFrame(action, weaponId, "west", 1)).toEqual({
-          key: `player-${action}-${weaponId}-west-1`,
-          flipX: false,
-        });
-        expect(
-          playerActionTextureFrame(action, weaponId, "north-west", 1),
-        ).toEqual({
-          key: `player-${action}-${weaponId}-north-west-1`,
-          flipX: false,
-        });
-        expect(
-          playerActionTextureFrame(action, weaponId, "south-west", 1),
-        ).toEqual({
-          key: `player-${action}-${weaponId}-south-west-1`,
-          flipX: false,
-        });
-      }
+      expect(playerActionTextureFrame("attack", weaponId, "west", 1)).toEqual({
+        key: `player-attack-${weaponId}-west-1`,
+        flipX: false,
+      });
+      expect(playerActionTextureFrame("skill", weaponId, "west", 1)).toEqual({
+        key: `player-skill-${weaponId}-east-1`,
+        flipX: true,
+      });
+      expect(
+        playerActionTextureFrame("skill", weaponId, "north-west", 1),
+      ).toEqual({
+        key: `player-skill-${weaponId}-north-east-1`,
+        flipX: true,
+      });
+      expect(
+        playerActionTextureFrame("skill", weaponId, "south-west", 1),
+      ).toEqual({
+        key: `player-skill-${weaponId}-south-east-1`,
+        flipX: true,
+      });
     }
   });
 

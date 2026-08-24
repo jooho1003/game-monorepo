@@ -18,12 +18,18 @@ interface GameStore {
   events: GameEvent[];
   commandHistory: CommandRecord[];
   fifthFloorMission: FifthFloorMissionState | null;
-  fifthFloorChoiceRequest: { id: number; accept: boolean } | null;
+  fifthFloorCommandRequest:
+    | { id: number; type: "strategy"; stealth: boolean }
+    | { id: number; type: "toggle-sacrifice"; soldierId: number }
+    | { id: number; type: "confirm-sacrifice" }
+    | null;
   dispatch: (command: GameCommand) => void;
   clearEvents: () => void;
   setFifthFloorMission: (mission: FifthFloorMissionState | null) => void;
-  requestFifthFloorSacrifice: (accept: boolean) => void;
-  clearFifthFloorChoiceRequest: () => void;
+  requestFifthFloorStrategy: (stealth: boolean) => void;
+  requestFifthFloorSacrificeToggle: (soldierId: number) => void;
+  requestFifthFloorSacrificeCharge: () => void;
+  clearFifthFloorCommandRequest: () => void;
 }
 
 const initialEnvelope = readSave();
@@ -37,7 +43,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   events: [],
   commandHistory: initialEnvelope?.commandHistory ?? [],
   fifthFloorMission: null,
-  fifthFloorChoiceRequest: null,
+  fifthFloorCommandRequest: null,
   dispatch: (command) => {
     const state = get();
     const result = transition(state.snapshot, command);
@@ -63,14 +69,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   clearEvents: () => set({ events: [] }),
   setFifthFloorMission: (fifthFloorMission) => set({ fifthFloorMission }),
-  requestFifthFloorSacrifice: (accept) =>
+  requestFifthFloorStrategy: (stealth) =>
     set((state) => ({
-      fifthFloorChoiceRequest: {
-        id: (state.fifthFloorChoiceRequest?.id ?? 0) + 1,
-        accept,
+      fifthFloorCommandRequest: {
+        id: (state.fifthFloorCommandRequest?.id ?? 0) + 1,
+        type: "strategy",
+        stealth,
       },
     })),
-  clearFifthFloorChoiceRequest: () => set({ fifthFloorChoiceRequest: null }),
+  requestFifthFloorSacrificeToggle: (soldierId) =>
+    set((state) => ({
+      fifthFloorCommandRequest: {
+        id: (state.fifthFloorCommandRequest?.id ?? 0) + 1,
+        type: "toggle-sacrifice",
+        soldierId,
+      },
+    })),
+  requestFifthFloorSacrificeCharge: () =>
+    set((state) => ({
+      fifthFloorCommandRequest: {
+        id: (state.fifthFloorCommandRequest?.id ?? 0) + 1,
+        type: "confirm-sacrifice",
+      },
+    })),
+  clearFifthFloorCommandRequest: () => set({ fifthFloorCommandRequest: null }),
 }));
 
 function readSave(): SaveEnvelope | undefined {

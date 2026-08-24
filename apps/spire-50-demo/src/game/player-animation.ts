@@ -47,9 +47,13 @@ export function playerActionTextureFrame(
   direction: PlayerDirection,
   frame: number,
 ): PlayerTextureFrame {
+  const sourceDirection =
+    action === "skill"
+      ? (MIRRORED_DIRECTION[direction] ?? direction)
+      : direction;
   return {
-    key: playerActionTextureKey(action, weaponId, direction, frame),
-    flipX: false,
+    key: playerActionTextureKey(action, weaponId, sourceDirection, frame),
+    flipX: sourceDirection !== direction,
   };
 }
 

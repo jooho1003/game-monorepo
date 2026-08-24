@@ -21,9 +21,7 @@ export function GameScreen() {
   const [openPanel, setOpenPanel] = useState<GamePanelId | null>(null);
 
   useEffect(() => {
-    setMusicContext(
-      zone === "battle" && floor === 5 ? "boss" : zone,
-    );
+    setMusicContext(zone === "battle" && floor === 5 ? "boss" : zone);
   }, [floor, zone]);
 
   useEffect(() => {
@@ -101,6 +99,9 @@ export function GameScreen() {
         <span>1 스킬</span>
         <span>Z 회수</span>
         <span>포탈 위 W</span>
+        {zone === "battle" && floor === 5 ? (
+          <span>전략 버튼 · 희생자 선택</span>
+        ) : null}
         <span>K 스킬 · I 가방 · P 상태</span>
       </div>
       <WeaponStamp />
@@ -114,10 +115,7 @@ function WeaponStamp() {
 
   return (
     <div className="weapon-stamp" style={{ borderColor: weapon.accent }}>
-      <img
-        src={`/assets/game/world/weapons/${weapon.id}.png`}
-        alt=""
-      />
+      <img src={`/assets/game/world/weapons/${weapon.id}.png`} alt="" />
       <span>{weapon.name}</span>
     </div>
   );

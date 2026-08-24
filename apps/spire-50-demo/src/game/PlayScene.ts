@@ -3,7 +3,9 @@ import { playCombatVoice, playSfx } from "../audio/audio-manager.js";
 import type { WandererRole, WeaponId, ZoneId } from "../domain/model.js";
 import {
   advanceFifthFloorMission,
-  chooseFifthFloorSacrifice,
+  chooseFifthFloorStrategy,
+  commandFifthFloorSacrificeCharge,
+  completeFifthFloorSacrifice,
   createFifthFloorMission,
   escapeFifthFloorMission,
   failFifthFloorMission,
@@ -11,7 +13,10 @@ import {
   hitCyclopsWithSkill,
   isCyclopsAwake,
   isCyclopsVisionActive,
+  loseFifthFloorSoldiers,
   reachFifthFloorBeach,
+  toggleFifthFloorSacrifice,
+  updateFifthFloorAlliesAtBeach,
   type FifthFloorFailureReason,
   type FifthFloorMissionEvent,
   type FifthFloorMissionState,
@@ -43,6 +48,7 @@ import {
   CAVE_MOVEMENT_BOUNDS,
   CAVE_OBSTACLES,
   CAVE_PLAYER_SPAWN,
+  CAVE_STRUCTURE_COLLIDERS,
   CAVE_WORLD_HEIGHT,
   CAVE_WORLD_WIDTH,
   CYCLOPS_DISPLAY_SIZE,
@@ -55,8 +61,10 @@ import {
   SHEEP_OUTSIDE_SPAWNS,
   doCaveBodiesOverlap,
   isPointInCaveExit,
+  isPointInCyclopsStrike,
   isPointInCyclopsVision,
   movementAvoidanceCandidates,
+  sheepYieldTarget,
   type CavePoint,
 } from "./fifth-floor-layout.js";
 import {
@@ -125,11 +133,20 @@ interface MissionSoldier {
   direction: PlayerDirection;
   hp: number;
   nextAttackAt: number;
+  attackStartedAt: number;
+  attackEndsAt: number;
 }
 
 interface CyclopsActorView {
   node: Phaser.GameObjects.Sprite;
   name: Phaser.GameObjects.Text;
+}
+
+interface CyclopsStrike {
+  marker: Phaser.GameObjects.Container;
+  x: number;
+  y: number;
+  resolvesAt: number;
 }
 
 type CyclopsAction = "idle" | "walk" | "attack" | "rock" | "sleep";
@@ -168,13 +185,15 @@ const DASH_SPEED_MULTIPLIER = 3.15;
 const CYCLOPS_PATROL_SPEED = 104;
 const CYCLOPS_CHASE_SPEED = 168;
 const CYCLOPS_FIGHT_SPEED = 205;
-const CYCLOPS_GRAB_DISTANCE = 122;
 const CYCLOPS_CONTACT_AGGRO_DISTANCE = 176;
 const CYCLOPS_BODY_RADIUS = 94;
 const CYCLOPS_LABEL_OFFSET = 250;
 const MISSION_SOLDIER_RADIUS = 25;
 const MISSION_SHEEP_RADIUS = 22;
-const GAME_FONT = '"Song Myung Local", Georgia, serif';
+const CYCLOPS_STRIKE_RADIUS = 82;
+const CYCLOPS_STRIKE_WARNING_MS = 900;
+const CYCLOPS_STRIKE_COOLDOWN_MS = 1_650;
+const GAME_FONT = '"Pretendard UI", "Noto Sans KR", sans-serif';
 
 const EIGHT_DIRECTION_SHEET_ORDER: readonly PlayerDirection[] = [
   "south",
@@ -303,19 +322,21 @@ export class PlayScene extends Phaser.Scene {
   private minimapWorldSize = { width: WIDTH, height: HEIGHT };
   private fifthFloorMission?: FifthFloorMissionState;
   private fifthFloorLastPublishedSecond = Number.NaN;
-  private fifthFloorLastChoiceRequestId = 0;
+  private fifthFloorLastCommandRequestId = 0;
   private cyclopsActor?: CyclopsActorView;
   private cyclopsVision?: Phaser.GameObjects.Graphics;
   private cyclopsDirection: PlayerDirection = "west";
   private cyclopsFacingAngle = CYCLOPS_FACING_ANGLE;
   private cyclopsPatrolIndex = 1;
-  private cyclopsPlayerGrabActive = false;
+  private cyclopsStrike?: CyclopsStrike;
+  private cyclopsNextStrikeAt = 0;
   private cyclopsAggroActive = false;
   private cyclopsAction: CyclopsAction = "idle";
   private caveGate?: Phaser.GameObjects.Container;
   private caveGateCollider?: Phaser.Geom.Rectangle;
   private missionAllies: MissionSoldier[] = [];
   private missionSheep: MissionSheep[] = [];
+  private stealthSacrificeInProgress = false;
   private bossPoseToken = 0;
   private bossGateActionEndsAt = Number.NEGATIVE_INFINITY;
   private nextFootstepAt = 0;
@@ -338,6 +359,14 @@ export class PlayScene extends Phaser.Scene {
     this.load.image(
       "first-floor-map",
       "/assets/game/world/maps/first-floor-center.png",
+    );
+    this.load.image(
+      "fifth-floor-map",
+      "/assets/game/world/maps/fifth-floor-cyclops-cave-v1.webp",
+    );
+    this.load.image(
+      "cyclops-rock-gate",
+      "/assets/game/world/boss/cyclops/cyclops-rock-gate-pixel-v1.webp",
     );
     for (const biome of ["forest", "lava", "glacier", "ruins"] as const) {
       this.load.image(
@@ -362,6 +391,14 @@ export class PlayScene extends Phaser.Scene {
       "sheep-walk-8d",
       "/assets/game/world/actors/sheep/sheep-walk-8d-v1.png",
     );
+    for (const direction of PLAYER_DIRECTIONS) {
+      for (const frame of [0, 1] as const) {
+        this.load.image(
+          `soldier-attack-${direction}-${frame}`,
+          `/assets/game/world/actors/soldier/attack/${direction}-${frame}.png`,
+        );
+      }
+    }
     for (const weaponId of WEAPON_IDS) {
       this.load.image(
         `world-weapon-${weaponId}`,
@@ -454,6 +491,12 @@ export class PlayScene extends Phaser.Scene {
     this.textures
       .get("first-floor-map")
       .setFilter(Phaser.Textures.FilterMode.NEAREST);
+    this.textures
+      .get("fifth-floor-map")
+      .setFilter(Phaser.Textures.FilterMode.NEAREST);
+    this.textures
+      .get("cyclops-rock-gate")
+      .setFilter(Phaser.Textures.FilterMode.NEAREST);
     for (const biome of ["forest", "lava", "glacier", "ruins"] as const) {
       this.textures
         .get(`battle-floor-${biome}`)
@@ -473,6 +516,13 @@ export class PlayScene extends Phaser.Scene {
       this.textures
         .get(textureKey)
         .setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+    for (const direction of PLAYER_DIRECTIONS) {
+      for (const frame of [0, 1] as const) {
+        this.textures
+          .get(`soldier-attack-${direction}-${frame}`)
+          .setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
     }
     for (const actor of ACTOR_KINDS) {
       for (const direction of ACTOR_DIRECTIONS) {
@@ -518,7 +568,10 @@ export class PlayScene extends Phaser.Scene {
 
   private registerCyclopsActionFrames(): void {
     const texture = this.textures.get("cyclops-actions-pixel");
-    const source = texture.getSourceImage() as { width: number; height: number };
+    const source = texture.getSourceImage() as {
+      width: number;
+      height: number;
+    };
     const actions = ["idle", "attack", "sleep", "rock"] as const;
     actions.forEach((action, index) => {
       const column = index % 2;
@@ -548,21 +601,12 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
 
-    if (this.cyclopsPlayerGrabActive) {
-      this.aimCursor.setVisible(false);
-      this.updateMinimapMarkers();
-      return;
-    }
-
     this.updatePlayer(time, delta);
     this.updateDashTrail(time);
     this.updateAim();
     this.updateMinimapMarkers();
 
-    if (
-      this.zone === "battle" &&
-      snapshot.floor === FIFTH_FLOOR_NUMBER
-    ) {
+    if (this.zone === "battle" && snapshot.floor === FIFTH_FLOOR_NUMBER) {
       this.updateFifthFloorMission(time, delta);
     } else if (this.zone === "battle") {
       this.updateEnemies(time, delta);
@@ -602,19 +646,21 @@ export class PlayScene extends Phaser.Scene {
     this.minimapWorldSize = { width: WIDTH, height: HEIGHT };
     this.fifthFloorMission = undefined;
     this.fifthFloorLastPublishedSecond = Number.NaN;
-    this.fifthFloorLastChoiceRequestId = 0;
+    this.fifthFloorLastCommandRequestId = 0;
     this.cyclopsActor = undefined;
     this.cyclopsVision = undefined;
     this.cyclopsDirection = "west";
     this.cyclopsFacingAngle = CYCLOPS_FACING_ANGLE;
     this.cyclopsPatrolIndex = 1;
-    this.cyclopsPlayerGrabActive = false;
+    this.cyclopsStrike = undefined;
+    this.cyclopsNextStrikeAt = 0;
     this.cyclopsAggroActive = false;
     this.cyclopsAction = "idle";
     this.caveGate = undefined;
     this.caveGateCollider = undefined;
     this.missionAllies = [];
     this.missionSheep = [];
+    this.stealthSacrificeInProgress = false;
     this.bossPoseToken = 0;
     this.bossGateActionEndsAt = Number.NEGATIVE_INFINITY;
     this.nextFootstepAt = 0;
@@ -645,7 +691,11 @@ export class PlayScene extends Phaser.Scene {
       .setOrigin(0.5, 0.78)
       .setDepth(5);
     this.heldWeapon = this.add
-      .image(spawn.x, spawn.y, `world-weapon-${useGameStore.getState().snapshot.weapon}`)
+      .image(
+        spawn.x,
+        spawn.y,
+        `world-weapon-${useGameStore.getState().snapshot.weapon}`,
+      )
       .setDisplaySize(34, 46)
       .setVisible(false)
       .setDepth(5.2);
@@ -659,7 +709,7 @@ export class PlayScene extends Phaser.Scene {
       useGameStore.getState().snapshot.floor !== FIFTH_FLOOR_NUMBER
     ) {
       useGameStore.getState().setFifthFloorMission(null);
-      useGameStore.getState().clearFifthFloorChoiceRequest();
+      useGameStore.getState().clearFifthFloorCommandRequest();
     }
     this.configureCamera();
     this.cameras.main.fadeIn(180, 10, 14, 18);
@@ -848,67 +898,33 @@ export class PlayScene extends Phaser.Scene {
       CAVE_MOVEMENT_BOUNDS.height,
     );
 
+    this.add
+      .image(CAVE_WORLD_WIDTH / 2, CAVE_WORLD_HEIGHT / 2, "fifth-floor-map")
+      .setDisplaySize(CAVE_WORLD_WIDTH, 2_345)
+      .setDepth(-5);
+
     const floor = this.add.graphics().setDepth(-4);
-    floor.fillStyle(0x090807, 1);
+    floor.fillStyle(0x060504, 0.16);
     floor.fillRect(0, 0, CAVE_WORLD_WIDTH, CAVE_WORLD_HEIGHT);
-    floor.fillStyle(0x241a14, 1);
-    floor.fillRoundedRect(76, 72, CAVE_WORLD_WIDTH - 142, CAVE_WORLD_HEIGHT - 144, 210);
-    floor.fillStyle(0x302219, 0.92);
-    floor.fillEllipse(1260, 800, 2160, 1260);
-    floor.fillStyle(0x3c2a1d, 0.42);
-    floor.fillEllipse(1830, 805, 1180, 980);
-    floor.fillStyle(0xb99a69, 1);
+    floor.fillStyle(0x120d0a, 0.2);
     floor.fillRoundedRect(
+      76,
+      72,
+      CAVE_WORLD_WIDTH - 142,
+      CAVE_WORLD_HEIGHT - 144,
+      110,
+    );
+    floor.lineStyle(4, 0x9dded2, 0.24);
+    floor.strokeRoundedRect(
       BEACH_REGION.x,
       BEACH_REGION.y,
       BEACH_REGION.width,
       BEACH_REGION.height,
-      120,
+      86,
     );
-    floor.fillStyle(0xd7bd83, 0.72);
-    floor.fillEllipse(3330, 800, 1110, 1110);
-    floor.fillStyle(0x246a79, 0.88);
-    floor.fillRect(3970, BEACH_REGION.y, 110, BEACH_REGION.height);
-    floor.lineStyle(8, 0x8fd2c2, 0.48);
-    for (let y = 220; y < 1450; y += 88) {
-      floor.lineBetween(3945, y, 4030 + ((y / 88) % 3) * 16, y + 12);
-    }
-    floor.fillStyle(0x6b8055, 0.5);
-    for (let index = 0; index < 18; index += 1) {
-      const x = 2800 + ((index * 173) % 920);
-      const y = 210 + ((index * 257) % 1160);
-      floor.fillEllipse(x, y, 18 + (index % 3) * 7, 9 + (index % 2) * 5);
-    }
-    floor.fillStyle(0x79624d, 0.72);
-    for (let index = 0; index < 13; index += 1) {
-      const x = 2860 + ((index * 229) % 980);
-      const y = 250 + ((index * 311) % 1080);
-      floor.fillCircle(x, y, 4 + (index % 4));
-    }
-    floor.lineStyle(7, 0x5b4634, 0.68);
-    floor.lineBetween(3260, 1220, 3388, 1162);
-    floor.lineStyle(3, 0xc7e9df, 0.54);
-    for (let y = 250; y < 1400; y += 120) {
-      floor.lineBetween(3912, y, 3985, y + 13);
-    }
     this.collisionRects.push(
       new Phaser.Geom.Rectangle(3970, BEACH_REGION.y, 110, BEACH_REGION.height),
     );
-    floor.lineStyle(10, 0x080706, 0.76);
-    for (let ring = 0; ring < 8; ring += 1) {
-      floor.strokeEllipse(
-        1280 + ring * 36,
-        800,
-        2170 - ring * 110,
-        1260 - ring * 78,
-      );
-    }
-    floor.lineStyle(3, 0x6f4930, 0.23);
-    for (let index = 0; index < 70; index += 1) {
-      const x = 170 + ((index * 353) % 2320);
-      const y = 160 + ((index * 197) % 1260);
-      floor.lineBetween(x - 18, y + 8, x + 23, y - 11);
-    }
 
     const walls = this.add.graphics().setDepth(-1);
     walls.fillStyle(0x070605, 1);
@@ -924,25 +940,48 @@ export class PlayScene extends Phaser.Scene {
       const x = obstacle.x + obstacle.width / 2;
       const y = obstacle.y + obstacle.height / 2;
       const shadow = this.add
-        .ellipse(x + 12, y + obstacle.height * 0.34, obstacle.width, obstacle.height * 0.5, 0x050403, 0.55)
+        .ellipse(
+          x + 12,
+          y + obstacle.height * 0.34,
+          obstacle.width,
+          obstacle.height * 0.5,
+          0x050403,
+          0.55,
+        )
         .setDepth(-0.5);
       const rock = this.add.graphics().setDepth(1);
       rock.fillStyle(0x211814, 1);
-      rock.fillRoundedRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height, 42);
-      rock.lineStyle(5, 0x5a3c29, 0.68);
-      rock.strokeRoundedRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height, 42);
-      rock.lineStyle(2, 0x8b5b37, 0.32);
-      rock.lineBetween(obstacle.x + 28, obstacle.y + 24, obstacle.x + obstacle.width - 24, obstacle.y + obstacle.height - 26);
-      shadow.setAngle((obstacle.x + obstacle.y) % 13);
-      this.collisionRects.push(
-        new Phaser.Geom.Rectangle(
-          obstacle.x,
-          obstacle.y,
-          obstacle.width,
-          obstacle.height,
-        ),
+      rock.fillRoundedRect(
+        obstacle.x,
+        obstacle.y,
+        obstacle.width,
+        obstacle.height,
+        42,
       );
+      rock.lineStyle(5, 0x5a3c29, 0.68);
+      rock.strokeRoundedRect(
+        obstacle.x,
+        obstacle.y,
+        obstacle.width,
+        obstacle.height,
+        42,
+      );
+      rock.lineStyle(2, 0x8b5b37, 0.32);
+      rock.lineBetween(
+        obstacle.x + 28,
+        obstacle.y + 24,
+        obstacle.x + obstacle.width - 24,
+        obstacle.y + obstacle.height - 26,
+      );
+      shadow.setAngle((obstacle.x + obstacle.y) % 13);
     }
+
+    this.collisionRects.push(
+      ...CAVE_STRUCTURE_COLLIDERS.map(
+        ({ x, y, width, height }) =>
+          new Phaser.Geom.Rectangle(x, y, width, height),
+      ),
+    );
 
     for (const [x, y] of [
       [420, 330],
@@ -1400,8 +1439,10 @@ export class PlayScene extends Phaser.Scene {
       .setAlpha(0.88);
 
     if (this.zone === "rest") return;
-    const areaWidth = this.battleLayout?.worldWidth ?? this.minimapWorldSize.width;
-    const areaHeight = this.battleLayout?.worldHeight ?? this.minimapWorldSize.height;
+    const areaWidth =
+      this.battleLayout?.worldWidth ?? this.minimapWorldSize.width;
+    const areaHeight =
+      this.battleLayout?.worldHeight ?? this.minimapWorldSize.height;
     for (let index = 0; index < 32; index += 1) {
       const x = 120 + ((index * 167) % (areaWidth - 240));
       const y = 115 + ((index * 197) % (areaHeight - 230));
@@ -1417,8 +1458,7 @@ export class PlayScene extends Phaser.Scene {
     const originY = 132;
     this.minimapWorldSize = {
       width:
-        layout?.worldWidth ??
-        (this.isFifthFloor() ? CAVE_WORLD_WIDTH : WIDTH),
+        layout?.worldWidth ?? (this.isFifthFloor() ? CAVE_WORLD_WIDTH : WIDTH),
       height:
         layout?.worldHeight ??
         (this.isFifthFloor() ? CAVE_WORLD_HEIGHT : HEIGHT),
@@ -1538,10 +1578,7 @@ export class PlayScene extends Phaser.Scene {
     ];
     let x = originX + 4;
     for (const [, label, color] of entries) {
-      this.add
-        .circle(x, y, 3, color)
-        .setScrollFactor(0)
-        .setDepth(43);
+      this.add.circle(x, y, 3, color).setScrollFactor(0).setDepth(43);
       this.add
         .text(x + 6, y, label, {
           color: "#c4d2cd",
@@ -1694,7 +1731,7 @@ export class PlayScene extends Phaser.Scene {
 
   private buildCyclopsZone(): void {
     const store = useGameStore.getState();
-    store.clearFifthFloorChoiceRequest();
+    store.clearFifthFloorCommandRequest();
     this.fifthFloorMission = createFifthFloorMission();
     if (import.meta.env.DEV) {
       const debugSeconds = Number(
@@ -1725,17 +1762,10 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(3);
     const gateShadow = this.add.ellipse(16, 118, 270, 92, 0x030302, 0.62);
     const slab = this.add
-      .ellipse(0, 0, 250, 370, 0x211814, 1)
-      .setStrokeStyle(10, 0x65452e, 0.92);
-    const inner = this.add
-      .ellipse(-12, -8, 194, 306, 0x35241a, 1)
-      .setStrokeStyle(4, 0x8a5b35, 0.48);
-    const crack = this.add.graphics();
-    crack.lineStyle(5, 0x100d0b, 0.72);
-    crack.lineBetween(-55, -118, 18, -44);
-    crack.lineBetween(18, -44, -24, 34);
-    crack.lineBetween(-24, 34, 48, 112);
-    gate.add([gateShadow, slab, inner, crack]);
+      .image(0, -6, "cyclops-rock-gate")
+      .setDisplaySize(292, 372)
+      .setOrigin(0.5, 0.5);
+    gate.add([gateShadow, slab]);
     this.caveGate = gate;
     this.caveGateCollider = new Phaser.Geom.Rectangle(
       CAVE_GATE_COLLIDER.x,
@@ -1752,6 +1782,8 @@ export class PlayScene extends Phaser.Scene {
         .setOrigin(0.5, 0.78)
         .setTint(index % 2 === 0 ? 0x88d8c6 : 0x9bc9ba)
         .setDepth(3.4);
+      ally.setData("walkPhase", index * 73);
+      ally.setData("missionKind", "soldier");
       const barBack = this.add
         .rectangle(point.x, point.y + 30, 44, 6, 0x0b1112, 0.9)
         .setDepth(4.1);
@@ -1768,48 +1800,65 @@ export class PlayScene extends Phaser.Scene {
         direction: "east" as PlayerDirection,
         hp: 100,
         nextAttackAt: index * 95,
+        attackStartedAt: Number.NEGATIVE_INFINITY,
+        attackEndsAt: Number.NEGATIVE_INFINITY,
       };
     });
-    this.missionSheep = SHEEP_INSIDE_SPAWNS.map((inside, index) => ({
-      node: this.add
+    this.missionSheep = SHEEP_INSIDE_SPAWNS.map((inside, index) => {
+      const node = this.add
         .sprite(inside.x, inside.y, "sheep-walk-8d", "east-0")
         .setDisplaySize(58, 58)
         .setOrigin(0.5, 0.72)
-        .setDepth(3.1),
-      inside,
-      outside: SHEEP_OUTSIDE_SPAWNS[index]!,
-      target: inside,
-      index,
-      direction: "east" as PlayerDirection,
-    }));
+        .setDepth(3.1);
+      node.setData("walkPhase", index * 61);
+      node.setData("missionKind", "sheep");
+      return {
+        node,
+        inside,
+        outside: SHEEP_OUTSIDE_SPAWNS[index]!,
+        target: inside,
+        index,
+        direction: "east" as PlayerDirection,
+      };
+    });
 
     const cyclopsName = this.add
-      .text(CYCLOPS_POSITION.x, CYCLOPS_POSITION.y - CYCLOPS_LABEL_OFFSET, "폴리페모스 · 외눈박이", {
-        color: "#ffd2a3",
-        fontFamily: GAME_FONT,
-        fontSize: "25px",
-        backgroundColor: "#160b07d9",
-        padding: { x: 14, y: 7 },
-      })
+      .text(
+        CYCLOPS_POSITION.x,
+        CYCLOPS_POSITION.y - CYCLOPS_LABEL_OFFSET,
+        "폴리페모스 · 외눈박이",
+        {
+          color: "#ffd2a3",
+          fontFamily: GAME_FONT,
+          fontSize: "25px",
+          backgroundColor: "#160b07d9",
+          padding: { x: 14, y: 7 },
+        },
+      )
       .setOrigin(0.5)
       .setDepth(6)
       .setResolution(2);
     this.cyclopsActor = { node: cyclopsNode, name: cyclopsName };
     this.add
-      .text(CAVE_GATE_POSITION.x - 34, CAVE_GATE_POSITION.y + 230, "바위문 · 열린 동안 우측 출구 통과", {
-        color: "#d3b083",
-        fontFamily: GAME_FONT,
-        fontSize: "14px",
-        backgroundColor: "#100a07c9",
-        padding: { x: 10, y: 5 },
-      })
+      .text(
+        CAVE_GATE_POSITION.x - 34,
+        CAVE_GATE_POSITION.y + 230,
+        "바위문 · 열린 동안 우측 출구 통과",
+        {
+          color: "#d3b083",
+          fontFamily: GAME_FONT,
+          fontSize: "14px",
+          backgroundColor: "#100a07c9",
+          padding: { x: 10, y: 5 },
+        },
+      )
       .setOrigin(0.5)
       .setDepth(5)
       .setResolution(2);
     this.addInstruction(
       CAVE_PLAYER_SPAWN.x + 190,
       CAVE_PLAYER_SPAWN.y + 104,
-      "병사와 함께 싸울 수 있습니다 · 잠든 거인을 기본 공격으로 깨운 뒤 열린 눈을 다시 맞히면 시야가 차단됩니다",
+      "병사는 대열을 유지합니다 · 잠든 눈을 기본 공격하면 8초 동안 공격이 멈추고 바위문이 열립니다",
     );
     this.createPortal(
       BEACH_REST_GATE_POSITION.x,
@@ -1833,15 +1882,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     const store = useGameStore.getState();
-    const request = store.fifthFloorChoiceRequest;
-    if (request && request.id !== this.fifthFloorLastChoiceRequestId) {
-      this.fifthFloorLastChoiceRequestId = request.id;
-      const chosen = chooseFifthFloorSacrifice(
-        this.fifthFloorMission,
-        request.accept,
-      );
-      this.fifthFloorMission = chosen.state;
-      this.handleFifthFloorEvents(chosen.events);
+    const request = store.fifthFloorCommandRequest;
+    if (request && request.id !== this.fifthFloorLastCommandRequestId) {
+      this.fifthFloorLastCommandRequestId = request.id;
+      const result =
+        request.type === "strategy"
+          ? chooseFifthFloorStrategy(this.fifthFloorMission, request.stealth)
+          : request.type === "toggle-sacrifice"
+            ? toggleFifthFloorSacrifice(
+                this.fifthFloorMission,
+                request.soldierId,
+              )
+            : commandFifthFloorSacrificeCharge(this.fifthFloorMission);
+      this.fifthFloorMission = result.state;
+      this.handleFifthFloorEvents(result.events);
       this.publishFifthFloorMission(true);
     }
 
@@ -1853,6 +1907,7 @@ export class PlayScene extends Phaser.Scene {
 
     this.updateMissionWalkers(time, delta);
     this.updateCyclopsActor(time, delta);
+    this.updateCyclopsStrike(time);
     this.updateCyclopsVision();
     if (time >= this.nextMissionAnimalSoundAt && this.missionSheep.length > 0) {
       this.nextMissionAnimalSoundAt = time + 7_600;
@@ -1871,20 +1926,6 @@ export class PlayScene extends Phaser.Scene {
       this.triggerCyclopsAggro();
     }
     if (
-      isCyclopsAwake(this.fifthFloorMission) &&
-      this.cyclopsBoss &&
-      Phaser.Math.Distance.Between(
-        this.cyclopsBoss.x,
-        this.cyclopsBoss.y,
-        this.player.x,
-        this.player.y,
-      ) <= CYCLOPS_GRAB_DISTANCE
-    ) {
-      this.playCyclopsPlayerGrab();
-      return;
-    }
-
-    if (
       this.fifthFloorMission.phase === "gate-open" &&
       isPointInCaveExit({ x: this.player.x, y: this.player.y })
     ) {
@@ -1893,11 +1934,25 @@ export class PlayScene extends Phaser.Scene {
       this.handleFifthFloorEvents(reached.events);
     }
 
+    const alliesAtBeach = this.missionAllies.filter(
+      (soldier) => soldier.node.active && soldier.node.x >= BEACH_REGION.x,
+    ).length;
+    const gathered = updateFifthFloorAlliesAtBeach(
+      this.fifthFloorMission,
+      alliesAtBeach,
+    );
+    this.fifthFloorMission = gathered.state;
+
     this.publishFifthFloorMission();
   }
 
   private updateCyclopsActor(time: number, delta: number): void {
     if (!this.cyclopsBoss || !this.fifthFloorMission) return;
+    if (this.cyclopsStrike) {
+      this.cyclopsAction = "attack";
+      this.renderCyclopsAction(time);
+      return;
+    }
     if (time < this.bossGateActionEndsAt) {
       this.renderCyclopsAction(time);
       return;
@@ -1915,7 +1970,9 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
 
-    const fighting = this.fifthFloorMission.sacrificeDecision === "fighting";
+    const fighting = this.fifthFloorMission.strategy === "fighting";
+    const sacrificeCharging =
+      this.fifthFloorMission.strategy === "stealth-charging";
     const seesPlayer =
       isCyclopsVisionActive(this.fifthFloorMission) &&
       isPointInCyclopsVision(
@@ -1925,7 +1982,12 @@ export class PlayScene extends Phaser.Scene {
         this.cyclopsFacingAngle,
       );
     let target = CYCLOPS_PATROL_POINTS[this.cyclopsPatrolIndex]!;
-    if (fighting || seesPlayer || this.cyclopsAggroActive) {
+    if (sacrificeCharging) {
+      const selected = this.missionAllies.find((soldier) =>
+        this.fifthFloorMission!.selectedSacrificeIds.includes(soldier.index),
+      );
+      if (selected) target = { x: selected.node.x, y: selected.node.y };
+    } else if (fighting || seesPlayer || this.cyclopsAggroActive) {
       target = { x: this.player.x, y: this.player.y };
     } else if (
       Phaser.Math.Distance.Between(
@@ -1948,14 +2010,13 @@ export class PlayScene extends Phaser.Scene {
       vector.normalize();
       const speed = fighting
         ? CYCLOPS_FIGHT_SPEED
+        : sacrificeCharging
+          ? CYCLOPS_CHASE_SPEED
         : seesPlayer || this.cyclopsAggroActive
           ? CYCLOPS_CHASE_SPEED
           : CYCLOPS_PATROL_SPEED;
       const distance = (speed * delta) / 1_000;
-      this.moveCyclopsWithCollisions(
-        vector.x * distance,
-        vector.y * distance,
-      );
+      this.moveCyclopsWithCollisions(vector.x * distance, vector.y * distance);
       this.cyclopsDirection = directionFromAxes(
         vector.x,
         vector.y,
@@ -1985,7 +2046,8 @@ export class PlayScene extends Phaser.Scene {
         `${this.cyclopsDirection}-${frame}`,
       );
     } else {
-      const actionFrame = this.cyclopsAction === "rock" ? "attack" : this.cyclopsAction;
+      const actionFrame =
+        this.cyclopsAction === "rock" ? "attack" : this.cyclopsAction;
       this.cyclopsBoss.setTexture("cyclops-actions-pixel", actionFrame);
     }
     this.cyclopsBoss
@@ -2017,15 +2079,7 @@ export class PlayScene extends Phaser.Scene {
   private canCyclopsOccupy(x: number, y: number): boolean {
     const feet = new Phaser.Geom.Rectangle(x - 82, y - 12, 164, 64);
     if (this.intersectsWorldCollision(feet)) return false;
-    if (
-      !this.cyclopsPlayerGrabActive &&
-      doCaveBodiesOverlap(
-        { x, y },
-        CYCLOPS_BODY_RADIUS,
-        this.player,
-        17,
-      )
-    ) {
+    if (doCaveBodiesOverlap({ x, y }, CYCLOPS_BODY_RADIUS, this.player, 17)) {
       this.triggerCyclopsAggro();
       return false;
     }
@@ -2052,56 +2106,115 @@ export class PlayScene extends Phaser.Scene {
     const bossPoint = this.cyclopsBoss
       ? { x: this.cyclopsBoss.x, y: this.cyclopsBoss.y }
       : CYCLOPS_POSITION;
+    const movingTraffic: CavePoint[] = [];
+    if (
+      this.moveKeys.up.isDown ||
+      this.moveKeys.down.isDown ||
+      this.moveKeys.left.isDown ||
+      this.moveKeys.right.isDown ||
+      time < this.dashEndsAt
+    ) {
+      movingTraffic.push({ x: this.player.x, y: this.player.y });
+    }
+    const selectedSacrifices = new Set(
+      this.fifthFloorMission?.selectedSacrificeIds ?? [],
+    );
 
     for (const soldier of this.missionAllies) {
-      const phase = soldier.index * 1.37;
-      let targetX = soldier.home.x + Math.cos(time * 0.00055 + phase) * 88;
-      let targetY = soldier.home.y + Math.sin(time * 0.00043 + phase) * 72;
-      const away = new Phaser.Math.Vector2(
-        soldier.node.x - bossPoint.x,
-        soldier.node.y - bossPoint.y,
+      const previousX = soldier.node.x;
+      const previousY = soldier.node.y;
+      const formation = this.missionFormationPoint(soldier.index);
+      let targetX = formation.x;
+      let targetY = formation.y;
+      const bossDistance = Phaser.Math.Distance.Between(
+        soldier.node.x,
+        soldier.node.y,
+        bossPoint.x,
+        bossPoint.y,
       );
-      const bossDistance = away.length();
       const fighting =
-        this.fifthFloorMission?.sacrificeDecision === "fighting" &&
+        this.fifthFloorMission?.strategy === "fighting" &&
         this.fifthFloorMission.phase === "watching";
-      if (fighting && bossDistance > 205) {
+      const sacrificing =
+        this.fifthFloorMission?.strategy === "stealth-charging" &&
+        selectedSacrifices.has(soldier.index);
+      if ((fighting || sacrificing) && bossDistance > 225) {
         targetX = bossPoint.x;
         targetY = bossPoint.y;
-      } else if (fighting && bossDistance <= 205) {
+      } else if (fighting && bossDistance <= 225) {
         targetX = soldier.node.x;
         targetY = soldier.node.y;
         if (time >= soldier.nextAttackAt) {
           soldier.nextAttackAt = time + 1_350 + (soldier.index % 4) * 90;
           this.playMissionSoldierAttack(soldier, bossPoint);
         }
-      } else if (bossDistance < 720 && bossDistance > 0) {
-        away.normalize();
-        const urgency = (720 - bossDistance) / 720;
-        targetX += away.x * (260 + urgency * 330);
-        targetY += away.y * (260 + urgency * 330);
       }
-      soldier.direction = this.moveMissionWalker(
-        soldier.node,
-        targetX,
-        targetY,
-        112,
-        soldier.direction,
-        time,
-        delta,
-        MISSION_SOLDIER_RADIUS,
-        soldier.index % 2 === 0,
+      if (time < soldier.attackEndsAt) {
+        const frame = time - soldier.attackStartedAt < 145 ? 0 : 1;
+        soldier.node.setTexture(
+          `soldier-attack-${soldier.direction}-${frame}`,
+        );
+      } else {
+        soldier.direction = this.moveMissionWalker(
+          soldier.node,
+          targetX,
+          targetY,
+          sacrificing ? 198 : fighting ? 260 : 128,
+          soldier.direction,
+          time,
+          delta,
+          MISSION_SOLDIER_RADIUS,
+          soldier.index % 2 === 0,
+          fighting || sacrificing,
+        );
+      }
+      const selected = selectedSacrifices.has(soldier.index);
+      soldier.node.setTint(
+        selected ? 0xffd070 : soldier.index % 2 === 0 ? 0x88d8c6 : 0x9bc9ba,
       );
+      if (
+        Phaser.Math.Distance.Between(
+          previousX,
+          previousY,
+          soldier.node.x,
+          soldier.node.y,
+        ) > 0.25
+      ) {
+        movingTraffic.push({ x: soldier.node.x, y: soldier.node.y });
+      }
       soldier.barBack.setPosition(soldier.node.x, soldier.node.y + 30);
       soldier.barFill
         .setPosition(soldier.node.x - 20, soldier.node.y + 30)
         .setDisplaySize(40 * (soldier.hp / 100), 3);
     }
 
+    this.tryBeginCyclopsSacrifice();
+
     for (const sheep of this.missionSheep) {
-      const phase = sheep.index * 0.91;
-      let targetX = sheep.target.x + Math.cos(time * 0.00072 + phase) * 36;
-      let targetY = sheep.target.y + Math.sin(time * 0.00061 + phase) * 30;
+      let targetX = sheep.target.x;
+      let targetY = sheep.target.y;
+      let nearestTraffic: CavePoint | undefined;
+      let nearestTrafficDistance = 104;
+      for (const actor of movingTraffic) {
+        const distance = Phaser.Math.Distance.Between(
+          sheep.node.x,
+          sheep.node.y,
+          actor.x,
+          actor.y,
+        );
+        if (distance >= nearestTrafficDistance) continue;
+        nearestTraffic = actor;
+        nearestTrafficDistance = distance;
+      }
+      if (nearestTraffic) {
+        const yieldTarget = sheepYieldTarget(
+          sheep.node,
+          nearestTraffic,
+          sheep.index % 2 === 0,
+        );
+        targetX = yieldTarget.x;
+        targetY = yieldTarget.y;
+      }
       const away = new Phaser.Math.Vector2(
         sheep.node.x - bossPoint.x,
         sheep.node.y - bossPoint.y,
@@ -2116,14 +2229,31 @@ export class PlayScene extends Phaser.Scene {
         sheep.node,
         targetX,
         targetY,
-        92,
+        nearestTraffic ? 154 : 218,
         sheep.direction,
         time,
         delta,
         MISSION_SHEEP_RADIUS,
         sheep.index % 2 === 0,
+        false,
       );
     }
+  }
+
+  private missionFormationPoint(index: number): CavePoint {
+    const angle = playerDirectionAngle(this.playerDirection);
+    const backDistance = 92 + Math.floor(index / 5) * 60;
+    const lateral = ((index % 5) - 2) * 56;
+    return {
+      x:
+        this.player.x -
+        Math.cos(angle) * backDistance +
+        Math.cos(angle + Math.PI / 2) * lateral,
+      y:
+        this.player.y -
+        Math.sin(angle) * backDistance +
+        Math.sin(angle + Math.PI / 2) * lateral,
+    };
   }
 
   private moveMissionWalker(
@@ -2136,13 +2266,24 @@ export class PlayScene extends Phaser.Scene {
     delta: number,
     radius: number,
     preferClockwise: boolean,
+    hasCrowdPriority: boolean,
   ): PlayerDirection {
     const vector = new Phaser.Math.Vector2(targetX - node.x, targetY - node.y);
     let direction = currentDirection;
     let moved = false;
-    if (vector.lengthSq() > 9) {
+    const arrivalRadius = radius === MISSION_SHEEP_RADIUS ? 10 : 8;
+    if (vector.length() > arrivalRadius) {
       vector.normalize();
-      const distance = Math.min((speed * delta) / 1_000, 4.5);
+      const remainingDistance = Math.max(
+        0,
+        Phaser.Math.Distance.Between(node.x, node.y, targetX, targetY) -
+          arrivalRadius,
+      );
+      const distance = Math.min(
+        (speed * delta) / 1_000,
+        4.5,
+        remainingDistance,
+      );
       for (const candidate of movementAvoidanceCandidates(
         vector.x,
         vector.y,
@@ -2158,7 +2299,17 @@ export class PlayScene extends Phaser.Scene {
           CAVE_MOVEMENT_BOUNDS.y + 24,
           CAVE_MOVEMENT_BOUNDS.y + CAVE_MOVEMENT_BOUNDS.height - 24,
         );
-        if (!this.canMissionWalkerOccupy(node, nextX, nextY, radius)) continue;
+        if (
+          !this.canMissionWalkerOccupy(
+            node,
+            nextX,
+            nextY,
+            radius,
+            hasCrowdPriority,
+          )
+        ) {
+          continue;
+        }
         node.setPosition(nextX, nextY);
         moved = true;
         direction = directionFromAxes(candidate.x, candidate.y, direction);
@@ -2167,11 +2318,15 @@ export class PlayScene extends Phaser.Scene {
     }
     const frame = moved
       ? Math.floor(
-          (time + node.x * 0.7 + node.y * 0.3) /
+          (time + (Number(node.getData("walkPhase")) || 0)) /
             MISSION_WALK_FRAME_DURATION,
         ) % 2
       : 0;
-    node.setFrame(`${direction}-${frame}`).setFlipX(false);
+    const textureKey =
+      node.getData("missionKind") === "soldier"
+        ? "soldier-walk-8d"
+        : "sheep-walk-8d";
+    node.setTexture(textureKey, `${direction}-${frame}`).setFlipX(false);
     return direction;
   }
 
@@ -2187,6 +2342,9 @@ export class PlayScene extends Phaser.Scene {
       bossPoint.y,
     );
     soldier.direction = directionFromAngle(angle);
+    soldier.attackStartedAt = this.time.now;
+    soldier.attackEndsAt = this.time.now + 330;
+    soldier.node.setTexture(`soldier-attack-${soldier.direction}-0`);
     this.playCombatSwipe(
       soldier.node.x + Math.cos(angle) * 30,
       soldier.node.y + Math.sin(angle) * 30,
@@ -2199,11 +2357,97 @@ export class PlayScene extends Phaser.Scene {
     this.handleFifthFloorEvents(hit.events);
   }
 
+  private tryBeginCyclopsSacrifice(): void {
+    if (
+      !this.fifthFloorMission ||
+      !this.cyclopsBoss ||
+      this.stealthSacrificeInProgress ||
+      this.fifthFloorMission.strategy !== "stealth-charging"
+    ) {
+      return;
+    }
+    const selectedIds = new Set(this.fifthFloorMission.selectedSacrificeIds);
+    const selected = this.missionAllies.filter((soldier) =>
+      selectedIds.has(soldier.index),
+    );
+    if (
+      selected.length !== 2 ||
+      selected.some(
+        (soldier) =>
+          Phaser.Math.Distance.Between(
+            soldier.node.x,
+            soldier.node.y,
+            this.cyclopsBoss!.x,
+            this.cyclopsBoss!.y,
+          ) > 216,
+      )
+    ) {
+      return;
+    }
+
+    this.stealthSacrificeInProgress = true;
+    this.cancelCyclopsStrike();
+    this.bossGateActionEndsAt = this.time.now + 2_100;
+    const selectedSet = new Set(selected);
+    this.missionAllies = this.missionAllies.filter(
+      (soldier) => !selectedSet.has(soldier),
+    );
+
+    selected.forEach((soldier, order) => {
+      this.time.delayedCall(order * 620, () => {
+        const boss = this.cyclopsBoss;
+        if (!boss?.active || !soldier.node.active) return;
+        const angle = Phaser.Math.Angle.Between(
+          boss.x,
+          boss.y,
+          soldier.node.x,
+          soldier.node.y,
+        );
+        this.cyclopsDirection = directionFromAngle(angle);
+        this.cyclopsAction = "attack";
+        this.renderCyclopsAction(this.time.now);
+        playSfx("giantAttack", { volume: 0.52, rate: 0.9 + order * 0.08 });
+        this.tweens.add({
+          targets: soldier.node,
+          x: boss.x + Math.cos(angle) * 62,
+          y: boss.y - 108 - order * 18,
+          scaleX: 0.3,
+          scaleY: 0.3,
+          angle: order === 0 ? -20 : 20,
+          alpha: 0,
+          duration: 520,
+          ease: "Back.In",
+          onComplete: () => soldier.node.destroy(),
+        });
+        this.tweens.add({
+          targets: [soldier.barBack, soldier.barFill],
+          alpha: 0,
+          duration: 180,
+          onComplete: () => {
+            soldier.barBack.destroy();
+            soldier.barFill.destroy();
+          },
+        });
+        this.showDamage(soldier.node.x, soldier.node.y - 28, 100);
+        this.playBossImpact(soldier.node.x, soldier.node.y);
+      });
+    });
+
+    this.time.delayedCall(1_450, () => {
+      if (!this.fifthFloorMission) return;
+      const completed = completeFifthFloorSacrifice(this.fifthFloorMission);
+      this.fifthFloorMission = completed.state;
+      this.stealthSacrificeInProgress = false;
+      this.handleFifthFloorEvents(completed.events);
+    });
+  }
+
   private canMissionWalkerOccupy(
     node: Phaser.GameObjects.Sprite,
     x: number,
     y: number,
     radius: number,
+    hasCrowdPriority: boolean,
   ): boolean {
     const feet = new Phaser.Geom.Rectangle(
       x - radius * 0.72,
@@ -2212,9 +2456,7 @@ export class PlayScene extends Phaser.Scene {
       radius * 0.7,
     );
     if (this.intersectsWorldCollision(feet)) return false;
-    if (
-      doCaveBodiesOverlap({ x, y }, radius, this.player, 17)
-    ) {
+    if (doCaveBodiesOverlap({ x, y }, radius, this.player, 17)) {
       return false;
     }
     if (
@@ -2228,6 +2470,7 @@ export class PlayScene extends Phaser.Scene {
     ) {
       return false;
     }
+    if (hasCrowdPriority) return true;
     return !this.missionCollisionBodies().some(
       (body) =>
         body.node !== node &&
@@ -2254,12 +2497,30 @@ export class PlayScene extends Phaser.Scene {
 
   private handleFifthFloorEvents(events: FifthFloorMissionEvent[]): void {
     for (const event of events) {
+      if (event.type === "allies-lost") {
+        this.showBossCallout(`타격에 병사 ${event.count}명 전사`, "#ff9b7a");
+        continue;
+      }
       if (event.type === "allies-sacrificed") {
-        this.playCyclopsMeal(event.count, event.voluntary);
+        this.showBossCallout("선택한 병사 2명 희생 · 외눈박이 수면", "#ffbd78");
+        continue;
+      }
+      if (event.type === "sacrifice-charge-commanded") {
+        this.showBossCallout(
+          `병사 ${event.soldierIds.map((id) => id + 1).join("·")} 돌진`,
+          "#ffd27a",
+        );
+        playSfx("uiConfirm", { volume: 0.48, rate: 1.05 });
+        continue;
+      }
+      if (event.type === "charge-commanded") {
+        this.showBossCallout("전원 진격!", "#8ce6d0");
+        playSfx("uiConfirm", { volume: 0.52, rate: 0.9 });
         continue;
       }
       if (event.type === "phase-changed") {
         if (event.phase === "gate-open") {
+          this.cancelCyclopsStrike();
           this.openCaveGate();
         } else if (
           event.phase === "watching" &&
@@ -2286,13 +2547,9 @@ export class PlayScene extends Phaser.Scene {
         }
         continue;
       }
-      if (event.type === "weak-point-exposed") {
-        this.showBossCallout("눈이 열렸다 · 지금 눈을 기본 공격으로 타격", "#ffcf7d");
-        playSfx("giantAlert", { volume: 0.48, rate: 1.08 });
-        continue;
-      }
       if (event.type === "vision-obscured") {
-        this.showBossCallout("시야 차단 성공 · 8초간 감지 불가", "#8ce6d0");
+        this.cancelCyclopsStrike();
+        this.showBossCallout("눈 찌르기 성공 · 8초간 문 개방", "#8ce6d0");
         this.cameras.main.flash(130, 115, 225, 205, false);
         continue;
       }
@@ -2303,7 +2560,10 @@ export class PlayScene extends Phaser.Scene {
         continue;
       }
       if (event.type === "beach-reached") {
-        this.showBossCallout("바닷가 도달 · 휴식처 게이트를 찾으세요", "#b7f1e6");
+        this.showBossCallout(
+          "바닷가 도달 · 휴식처 게이트를 찾으세요",
+          "#b7f1e6",
+        );
         continue;
       }
       if (event.type === "mission-failed") {
@@ -2361,148 +2621,169 @@ export class PlayScene extends Phaser.Scene {
     });
   }
 
-  private playCyclopsMeal(count: number, voluntary: boolean): void {
-    if (!this.cyclopsBoss) return;
-    const poseToken = ++this.bossPoseToken;
-    this.cameras.main.shake(190, voluntary ? 0.004 : 0.0065);
-    const consumed = this.missionAllies.splice(
-      Math.max(0, this.missionAllies.length - count),
-      count,
-    );
-    consumed.forEach((soldier, index) => {
-      this.time.delayedCall(index * 760, () => {
-        const boss = this.cyclopsBoss;
-        if (!boss?.active || !soldier.node.active) return;
-        const angle = Phaser.Math.Angle.Between(
-          boss.x,
-          boss.y,
-          soldier.node.x,
-          soldier.node.y,
-        );
-        const handSide = Math.cos(angle) < 0 ? -1 : 1;
-        this.cyclopsDirection = directionFromAngle(angle);
-        this.cyclopsAction = "attack";
-        this.renderCyclopsAction(this.time.now);
-        playSfx("giantAttack", { volume: 0.54 });
-        const lungeX = boss.x + Math.cos(angle) * 76;
-        const lungeY = boss.y + Math.sin(angle) * 52;
-        this.tweens.add({
-          targets: boss,
-          x: lungeX,
-          y: lungeY,
-          duration: 300,
-          ease: "Quad.Out",
-          onUpdate: () =>
-            this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
-        });
-        const victimMark = this.add
-          .circle(soldier.node.x, soldier.node.y + 8, 35, 0xff5c3f, 0.14)
-          .setStrokeStyle(4, 0xff7752, 0.78)
-          .setDepth(3.2);
-        this.tweens.add({
-          targets: victimMark,
-          scale: 0.45,
-          alpha: 0,
-          duration: 470,
-          onComplete: () => victimMark.destroy(),
-        });
-        this.time.delayedCall(220, () => {
-          if (!soldier.node.active || !boss.active) return;
-          soldier.hp = 0;
-          soldier.barFill.setDisplaySize(0, 3);
-          this.showDamage(soldier.node.x, soldier.node.y - 28, 100);
-          this.playBossImpact(soldier.node.x, soldier.node.y);
-          this.tweens.add({
-            targets: soldier.node,
-            x: boss.x + handSide * 118,
-            y: boss.y - 118,
-            scaleX: 0.28,
-            scaleY: 0.28,
-            angle: handSide * 18,
-            alpha: 0.08,
-            duration: 520,
-            ease: "Back.In",
-            onComplete: () => {
-              soldier.node.destroy();
-              soldier.barBack.destroy();
-              soldier.barFill.destroy();
-            },
-          });
-        });
-      });
-    });
-    this.time.delayedCall(Math.max(920, consumed.length * 760 + 120), () => {
-      if (
-        this.cyclopsBoss?.active &&
-        this.fifthFloorMission?.phase === "sleeping" &&
-        this.bossPoseToken === poseToken
-      ) {
-        this.cyclopsAction = "sleep";
-        this.renderCyclopsAction(this.time.now);
-      }
-    });
-  }
-
-  private playCyclopsPlayerGrab(): void {
+  private updateCyclopsStrike(time: number): void {
+    if (!this.cyclopsBoss || !this.fifthFloorMission) return;
+    if (this.cyclopsStrike) {
+      if (time >= this.cyclopsStrike.resolvesAt) this.resolveCyclopsStrike();
+      return;
+    }
     if (
-      !this.cyclopsBoss ||
-      !this.fifthFloorMission ||
-      this.cyclopsPlayerGrabActive
+      time < this.cyclopsNextStrikeAt ||
+      time < this.bossGateActionEndsAt ||
+      this.fifthFloorMission.strategy === "stealth-charging" ||
+      !isCyclopsVisionActive(this.fifthFloorMission)
     ) {
       return;
     }
-    this.cyclopsPlayerGrabActive = true;
-    const boss = this.cyclopsBoss;
-    const handSide = this.player.x < boss.x ? -1 : 1;
+
+    const candidates = [
+      { x: this.player.x, y: this.player.y },
+      ...this.missionAllies.map((soldier) => ({
+        x: soldier.node.x,
+        y: soldier.node.y,
+      })),
+    ].filter((point) =>
+      isPointInCyclopsVision(
+        point,
+        this.fifthFloorMission!.phase,
+        this.cyclopsBoss!,
+        this.cyclopsFacingAngle,
+      ),
+    );
+    let target: CavePoint | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      const distance = Phaser.Math.Distance.Between(
+        this.cyclopsBoss.x,
+        this.cyclopsBoss.y,
+        candidate.x,
+        candidate.y,
+      );
+      if (distance >= nearestDistance) continue;
+      target = candidate;
+      nearestDistance = distance;
+    }
+    if (!target) return;
+    this.beginCyclopsStrike(target, time);
+  }
+
+  private cancelCyclopsStrike(): void {
+    if (!this.cyclopsStrike) return;
+    this.cyclopsStrike.marker.destroy(true);
+    this.cyclopsStrike = undefined;
+    this.cyclopsNextStrikeAt = this.time.now + 650;
+  }
+
+  private beginCyclopsStrike(target: CavePoint, time: number): void {
+    if (!this.cyclopsBoss) return;
+    const fill = this.add.circle(0, 0, CYCLOPS_STRIKE_RADIUS, 0xd92f28, 0.18);
+    const ring = this.add
+      .circle(0, 0, CYCLOPS_STRIKE_RADIUS, 0x000000, 0)
+      .setStrokeStyle(7, 0xff4b36, 0.92);
+    const inner = this.add
+      .circle(0, 0, 18, 0xffd2a3, 0.24)
+      .setStrokeStyle(3, 0xffd2a3, 0.85);
+    const marker = this.add
+      .container(target.x, target.y, [fill, ring, inner])
+      .setDepth(8.4);
+    this.tweens.add({
+      targets: ring,
+      scale: 0.28,
+      duration: CYCLOPS_STRIKE_WARNING_MS,
+      ease: "Sine.In",
+    });
+    this.tweens.add({
+      targets: fill,
+      alpha: 0.42,
+      yoyo: true,
+      repeat: 3,
+      duration: 110,
+    });
     this.cyclopsDirection = directionFromAxes(
-      this.player.x - boss.x,
-      this.player.y - boss.y,
+      target.x - this.cyclopsBoss.x,
+      target.y - this.cyclopsBoss.y,
       this.cyclopsDirection,
     );
     this.cyclopsAction = "attack";
-    this.renderCyclopsAction(this.time.now);
-    playSfx("giantAttack");
-    const warning = this.add
-      .circle(this.player.x, this.player.y, 54, 0xff4d32, 0.16)
-      .setStrokeStyle(5, 0xff6b42, 0.8)
-      .setDepth(8);
-    this.tweens.add({
-      targets: warning,
-      scale: 0.24,
-      alpha: 0,
-      duration: 360,
-      onComplete: () => warning.destroy(),
-    });
-    this.cameras.main.shake(260, 0.0075);
-    this.tweens.add({
-      targets: boss,
-      x: boss.x + handSide * 42,
-      y: boss.y + (this.player.y - boss.y) * 0.18,
-      duration: 250,
-      ease: "Quad.Out",
-      onUpdate: () =>
-        this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
-    });
-    this.time.delayedCall(190, () => {
-      this.tweens.add({
-        targets: this.player,
-        x: boss.x + handSide * 118,
-        y: boss.y - 122,
-        scaleX: 0.24,
-        scaleY: 0.24,
-        angle: handSide * 22,
-        alpha: 0.12,
-        duration: 610,
-        ease: "Back.In",
-      });
-      this.playerShadow.setVisible(false);
-    });
-    this.time.delayedCall(880, () => {
-      if (!this.fifthFloorMission) return;
+    this.renderCyclopsAction(time);
+    playSfx("giantAlert", { volume: 0.46, rate: 1.12 });
+    this.cyclopsStrike = {
+      marker,
+      x: target.x,
+      y: target.y,
+      resolvesAt: time + CYCLOPS_STRIKE_WARNING_MS,
+    };
+  }
+
+  private resolveCyclopsStrike(): void {
+    const strike = this.cyclopsStrike;
+    if (!strike || !this.fifthFloorMission) return;
+    this.cyclopsStrike = undefined;
+    strike.marker.destroy(true);
+    this.cyclopsNextStrikeAt = this.time.now + CYCLOPS_STRIKE_COOLDOWN_MS;
+    playSfx("giantAttack", { volume: 0.58, rate: 0.88 });
+    this.playBossImpact(strike.x, strike.y);
+    this.cameras.main.shake(230, 0.008);
+
+    const strikeTarget = { x: strike.x, y: strike.y };
+    const playerCaught = isPointInCyclopsStrike(
+      this.player,
+      strikeTarget,
+      CYCLOPS_STRIKE_RADIUS,
+    );
+    const caught = this.missionAllies.filter(
+      (soldier) =>
+        soldier.node.active &&
+        isPointInCyclopsStrike(
+          soldier.node,
+          strikeTarget,
+          CYCLOPS_STRIKE_RADIUS,
+        ),
+    );
+
+    if (caught.length > 0) this.defeatMissionSoldiers(caught);
+    if (playerCaught) {
       const failed = failFifthFloorMission(this.fifthFloorMission, "spotted");
       this.fifthFloorMission = failed.state;
       this.handleFifthFloorEvents(failed.events);
-    });
+      return;
+    }
+    if (caught.length === 0) {
+      this.showBossCallout("공격 회피", "#b7f1e6");
+    }
+  }
+
+  private defeatMissionSoldiers(caught: readonly MissionSoldier[]): void {
+    if (!this.fifthFloorMission || caught.length === 0) return;
+    const caughtSet = new Set(caught);
+    this.missionAllies = this.missionAllies.filter(
+      (soldier) => !caughtSet.has(soldier),
+    );
+    for (const soldier of caught) {
+      soldier.hp = 0;
+      soldier.barFill.setDisplaySize(0, 3);
+      this.showDamage(soldier.node.x, soldier.node.y - 28, 100);
+      this.tweens.add({
+        targets: soldier.node,
+        alpha: 0,
+        angle: soldier.index % 2 === 0 ? -82 : 82,
+        scaleX: 0.42,
+        scaleY: 0.42,
+        duration: 420,
+        ease: "Quad.In",
+        onComplete: () => {
+          soldier.node.destroy();
+          soldier.barBack.destroy();
+          soldier.barFill.destroy();
+        },
+      });
+    }
+    const result = loseFifthFloorSoldiers(
+      this.fifthFloorMission,
+      caught.map((soldier) => soldier.index),
+    );
+    this.fifthFloorMission = result.state;
+    this.handleFifthFloorEvents(result.events);
   }
 
   private openCaveGate(): void {
@@ -2525,7 +2806,8 @@ export class PlayScene extends Phaser.Scene {
         y: CAVE_GATE_POSITION.y + 18,
         duration: 720,
         ease: "Sine.InOut",
-        onUpdate: () => this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
+        onUpdate: () =>
+          this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
       });
     }
     this.time.delayedCall(700, () => {
@@ -2568,7 +2850,8 @@ export class PlayScene extends Phaser.Scene {
         y: CAVE_GATE_POSITION.y + 18,
         duration: 520,
         ease: "Sine.InOut",
-        onUpdate: () => this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
+        onUpdate: () =>
+          this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
       });
     }
     this.time.delayedCall(500, () => {
@@ -2630,9 +2913,7 @@ export class PlayScene extends Phaser.Scene {
     const second = Math.ceil(this.fifthFloorMission.remainingMs / 1000);
     if (!force && second === this.fifthFloorLastPublishedSecond) return;
     this.fifthFloorLastPublishedSecond = second;
-    useGameStore
-      .getState()
-      .setFifthFloorMission({ ...this.fifthFloorMission });
+    useGameStore.getState().setFifthFloorMission({ ...this.fifthFloorMission });
   }
 
   private finishFifthFloorFailure(reason: FifthFloorFailureReason): void {
@@ -2640,9 +2921,7 @@ export class PlayScene extends Phaser.Scene {
     this.transitioning = true;
     this.aimCursor.setVisible(false);
     this.publishFifthFloorMission(true);
-    useGameStore
-      .getState()
-      .dispatch({ type: "FAIL_FIFTH_FLOOR", reason });
+    useGameStore.getState().dispatch({ type: "FAIL_FIFTH_FLOOR", reason });
   }
 
   private finishFifthFloorEscape(): void {
@@ -2864,9 +3143,7 @@ export class PlayScene extends Phaser.Scene {
         1,
         Math.floor((time - dashStartedAt) / DASH_FRAME_DURATION),
       );
-      this.setPlayerTexture(
-        `player-dash-${this.playerDirection}-${frame}`,
-      );
+      this.setPlayerTexture(`player-dash-${this.playerDirection}-${frame}`);
       return;
     }
 
@@ -3132,21 +3409,14 @@ export class PlayScene extends Phaser.Scene {
     this.playerDirection = directionFromAngle(angle);
     this.skillPoseDirection = this.playerDirection;
     this.setPlayerTexture(
-      this.directionalActionTexture(
-        "skill",
-        weaponId,
-        this.playerDirection,
-        0,
-      ),
+      this.directionalActionTexture("skill", weaponId, this.playerDirection, 0),
     );
     this.skillPoseWeapon = weaponId;
     this.skillPoseStartedAt = time;
     this.weaponAttackStartedAt = Number.NEGATIVE_INFINITY;
     const profile = WEAPON_COMBAT[weaponId];
     playSfx(
-      weaponId === "staff" || weaponId === "bow"
-        ? "magicCast"
-        : "weaponSwing",
+      weaponId === "staff" || weaponId === "bow" ? "magicCast" : "weaponSwing",
       { volume: 0.46, rate: weaponId === "shield" ? 0.78 : 0.92 },
     );
     playCombatVoice("skill", weaponId);
@@ -4551,7 +4821,12 @@ export class PlayScene extends Phaser.Scene {
       const escaped = escapeFifthFloorMission(this.fifthFloorMission);
       if (escaped.state.status !== "escaped") {
         this.transitioning = false;
-        this.showBossCallout("먼저 열린 바위문을 지나 바닷가에 도달해야 합니다", "#ffc39c");
+        this.showBossCallout(
+          this.fifthFloorMission.reachedBeach
+            ? `생존 병사 집결 대기 · ${this.fifthFloorMission.alliesAtBeach}/${this.fifthFloorMission.alliesRemaining}`
+            : "먼저 열린 바위문을 지나 바닷가에 도달해야 합니다",
+          "#ffc39c",
+        );
         return;
       }
       this.fifthFloorMission = escaped.state;
@@ -4623,6 +4898,11 @@ function cardinalDirectionFromAxes(
 ): ActorDirection {
   if (Math.abs(xAxis) > Math.abs(yAxis)) return xAxis < 0 ? "west" : "east";
   return yAxis < 0 ? "north" : "south";
+}
+
+function playerDirectionAngle(direction: PlayerDirection): number {
+  const index = PLAYER_DIRECTIONS.indexOf(direction);
+  return -Math.PI / 2 + index * (Math.PI / 4);
 }
 
 function distanceToSegment(

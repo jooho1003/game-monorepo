@@ -14,18 +14,22 @@
   src: url("/assets/fonts/cinzel/Cinzel-Variable.ttf") format("truetype");
 }
 
+@font-face {
+  font-family: "Pretendard UI";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src:
+    url("/assets/fonts/pretendard/PretendardVariable.woff2")
+    format("woff2-variations");
+}
+
 :root {
+  --font-ui: "Pretendard UI", Pretendard, "Noto Sans KR", Inter, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #edf3ea;
   background: #0a1016;
-  font-family:
-    Pretendard,
-    "Noto Sans KR",
-    Inter,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -1521,7 +1525,7 @@ button:focus-visible {
 
 .game-canvas canvas {
   display: block;
-  image-rendering: auto;
+  image-rendering: pixelated;
 }
 
 .hud-status,
@@ -1543,8 +1547,9 @@ button:focus-visible {
   gap: 12px;
   align-items: center;
   padding: 8px 13px 8px 8px;
-  border: 1px solid #81745e;
-  background: linear-gradient(90deg, rgb(10 16 19 / 96%), rgb(7 14 18 / 82%));
+  border: 1px solid rgb(184 157 105 / 72%);
+  border-radius: 3px;
+  background: linear-gradient(135deg, rgb(18 25 27 / 97%), rgb(6 14 18 / 90%));
   box-shadow:
     0 12px 30px rgb(0 0 0 / 38%),
     inset 0 0 20px rgb(116 204 180 / 5%);
@@ -1681,8 +1686,8 @@ button:focus-visible {
   left: 50%;
   width: min(470px, 40vw);
   padding: 12px 22px;
-  border-top: 1px solid #7c9b91;
-  border-bottom: 1px solid #526a62;
+  border: 1px solid rgb(116 174 159 / 46%);
+  border-radius: 3px;
   background: linear-gradient(
     90deg,
     transparent,
@@ -1741,8 +1746,10 @@ button:focus-visible {
   align-items: center;
   min-width: 150px;
   padding: 12px;
-  border: 1px solid #657e76;
-  background: rgb(8 16 20 / 90%);
+  border: 1px solid rgb(139 196 180 / 58%);
+  border-radius: 3px;
+  background: linear-gradient(135deg, rgb(10 22 25 / 96%), rgb(6 13 17 / 90%));
+  box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
 }
 
 .skill-slot kbd {
@@ -1789,14 +1796,19 @@ button:focus-visible {
   bottom: 0;
   left: 0;
   display: flex;
-  gap: 23px;
+  gap: 8px;
   justify-content: center;
   padding: 9px;
-  background: rgb(4 9 12 / 88%);
+  background: linear-gradient(180deg, rgb(4 9 12 / 62%), rgb(4 9 12 / 95%));
   color: #90aaa2;
   font-family: "Cinzel Local", "Song Myung Local", serif;
   font-size: 11px;
   letter-spacing: 0.05em;
+}
+
+.game-screen__footer span {
+  padding: 2px 8px;
+  border-left: 1px solid rgb(120 170 157 / 32%);
 }
 
 .weapon-stamp {
@@ -1807,7 +1819,9 @@ button:focus-visible {
   align-items: center;
   padding: 8px 12px;
   border: 1px solid;
-  background: #081014cc;
+  border-radius: 3px;
+  background: linear-gradient(135deg, rgb(10 20 23 / 96%), rgb(7 13 17 / 88%));
+  box-shadow: 0 10px 26px rgb(0 0 0 / 35%);
   font-family: "Song Myung Local", Georgia, serif;
   font-size: 13px;
 }
@@ -1825,153 +1839,458 @@ button:focus-visible {
 }
 
 .cyclops-mission {
+  --mission-accent: #ffb66f;
+  --mission-accent-soft: rgb(255 182 111 / 14%);
+  --mission-panel: rgb(10 16 20 / 96%);
+  --mission-panel-soft: rgb(14 23 27 / 92%);
+  --mission-line: rgb(255 210 160 / 22%);
+  --mission-text: #f7f3eb;
+  --mission-muted: #bdc6c4;
   position: absolute;
-  inset: 105px 24px auto;
+  inset: 104px auto auto 50%;
   z-index: 18;
   display: grid;
-  grid-template-columns: 210px minmax(300px, 1fr) 390px;
+  width: min(720px, calc(100vw - 88px));
   gap: 12px;
-  align-items: start;
+  justify-items: stretch;
+  font-family: var(--font-ui);
+  font-feature-settings: "tnum" 1;
   pointer-events: none;
+  transform: translateX(-50%);
 }
 
-.cyclops-mission__clock,
-.cyclops-mission__phase,
+.cyclops-mission__summary,
 .cyclops-mission__choice {
-  border: 1px solid #98704b;
-  background: rgb(17 10 8 / 91%);
-  box-shadow: 0 14px 36px rgb(0 0 0 / 48%);
+  overflow: hidden;
+  border: 1px solid var(--mission-line);
+  border-top: 3px solid var(--mission-accent);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, var(--mission-accent-soft), transparent 48%),
+    var(--mission-panel);
+  box-shadow:
+    0 18px 44px rgb(0 0 0 / 46%),
+    inset 0 1px rgb(255 255 255 / 4%);
+  backdrop-filter: blur(10px);
+}
+
+.cyclops-mission__summary {
+  display: grid;
+  gap: 11px;
+  padding: 12px 16px 13px;
+}
+
+.cyclops-mission__summary.is-sleeping {
+  --mission-accent: #7dd7f3;
+  --mission-accent-soft: rgb(83 181 221 / 15%);
+  --mission-line: rgb(125 215 243 / 30%);
+}
+
+.cyclops-mission__summary.is-gate-open {
+  --mission-accent: #65e4b8;
+  --mission-accent-soft: rgb(69 214 163 / 16%);
+  --mission-line: rgb(101 228 184 / 32%);
+  box-shadow:
+    0 18px 44px rgb(0 0 0 / 44%),
+    0 0 30px rgb(65 222 168 / 12%);
+}
+
+.cyclops-mission__topline {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.cyclops-mission__title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cyclops-mission__title span,
+.cyclops-mission__clock span {
+  color: var(--mission-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+
+.cyclops-mission__title strong {
+  overflow: hidden;
+  color: var(--mission-text);
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cyclops-mission__status-line {
+  display: flex;
+  min-height: 34px;
+  gap: 7px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--mission-accent) 36%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mission-accent) 10%, transparent);
+}
+
+.cyclops-mission__status-line i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mission-accent);
+  box-shadow: 0 0 10px var(--mission-accent);
+}
+
+.cyclops-mission__status-line span {
+  color: var(--mission-text);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cyclops-mission__status-line strong {
+  color: var(--mission-accent);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .cyclops-mission__clock {
   display: grid;
-  padding: 10px 15px;
-  text-align: center;
-}
-
-.cyclops-mission__clock span {
-  color: #c89b70;
-  font-family: "Cinzel Local", serif;
-  font-size: 8px;
-  letter-spacing: 0.11em;
+  justify-items: end;
+  min-width: 82px;
 }
 
 .cyclops-mission__clock strong {
-  color: #ffe4b0;
-  font-family: "Cinzel Local", Georgia, serif;
-  font-size: 30px;
-  letter-spacing: 0.08em;
-}
-
-.cyclops-mission__phase {
-  display: grid;
-  gap: 4px;
-  padding: 12px 16px;
-  text-align: center;
-}
-
-.cyclops-mission__phase strong {
-  color: #f2d3a0;
-  font-size: 13px;
-}
-
-.cyclops-mission__phase span {
-  color: #bba78f;
-  font-size: 12px;
+  color: #fff0d2;
+  font-family: "Cinzel Local", var(--font-ui);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.035em;
 }
 
 .cyclops-mission__boss-health {
-  position: relative;
-  height: 17px;
-  margin-top: 7px;
-  overflow: hidden;
-  border: 1px solid #b17255;
-  background: #24100e;
+  display: grid;
+  gap: 6px;
 }
 
-.cyclops-mission__boss-health i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: linear-gradient(90deg, #7e2026, #de5748);
+.cyclops-mission__boss-health > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.cyclops-mission__boss-health span,
+.cyclops-mission__boss-health b {
+  color: #f4e9df;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.cyclops-mission__boss-health b {
+  color: #ffd9cd;
+  font-variant-numeric: tabular-nums;
+}
+
+.cyclops-mission__health-track {
+  display: block;
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid rgb(243 116 102 / 45%);
+  border-radius: 999px;
+  background: #291315;
+}
+
+.cyclops-mission__health-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d3484d, #ff7665);
+  box-shadow: 0 0 12px rgb(255 102 91 / 42%);
   transition: width 160ms ease-out;
 }
 
-.cyclops-mission__boss-health span {
-  position: relative;
-  z-index: 1;
-  display: block;
-  color: #fff3df;
-  font-size: 11px;
-  line-height: 15px;
-  text-shadow: 0 1px 3px #000;
+.cyclops-mission__meta {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
 }
 
-.cyclops-mission__phase em,
-.cyclops-mission__phase b {
-  color: #d7bf98;
+.cyclops-mission__squad {
+  display: flex;
+  flex: 1;
+  gap: 5px;
+}
+
+.cyclops-mission__squad span {
+  display: flex;
+  flex: 1;
+  min-height: 39px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid rgb(153 190 184 / 20%);
+  border-radius: 7px;
+  background: rgb(3 12 15 / 56%);
+  white-space: nowrap;
+}
+
+.cyclops-mission__squad small,
+.cyclops-mission__meta em small {
+  color: var(--mission-muted);
   font-size: 11px;
+  font-weight: 550;
+}
+
+.cyclops-mission__squad b {
+  color: #eefaf7;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.cyclops-mission__meta em {
+  display: grid;
+  min-width: 176px;
+  align-content: center;
+  gap: 1px;
+  padding: 5px 10px;
+  border: 1px solid rgb(255 182 111 / 22%);
+  border-radius: 7px;
+  background: rgb(48 29 18 / 42%);
   font-style: normal;
-  font-weight: 400;
 }
 
-.cyclops-mission__phase em.is-exposed {
-  color: #ffd276;
+.cyclops-mission__meta em b {
+  color: #e8d6bb;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.cyclops-mission__phase em.is-blinded,
-.cyclops-mission__phase b {
-  color: #91ebd5;
+.cyclops-mission__meta em.is-primed b {
+  color: #ffd67e;
 }
 
-.cyclops-mission__phase.is-sleeping {
-  border-color: #6ba0b4;
-  background: rgb(8 20 27 / 91%);
+.cyclops-mission__meta em.is-blinded b {
+  color: #8fe9d2;
 }
 
-.cyclops-mission__phase.is-gate-open {
-  border-color: #74d3b7;
-  background: rgb(6 30 26 / 93%);
-  box-shadow: 0 0 28px rgb(78 229 184 / 18%);
+.cyclops-mission__hint {
+  display: flex;
+  min-height: 31px;
+  gap: 9px;
+  align-items: center;
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--mission-accent);
+  background: var(--mission-panel-soft);
+  color: #e3e8e5;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+.cyclops-mission__hint span {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--mission-accent);
+  color: #17201f;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
 }
 
 .cyclops-mission__choice {
-  padding: 9px 11px 11px;
+  width: min(620px, 100%);
+  justify-self: center;
+  padding: 15px 16px 16px;
   pointer-events: auto;
 }
 
-.cyclops-mission__choice p {
-  margin: 0 0 8px;
-  color: #d6c5ad;
+.cyclops-mission__choice-heading {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  margin-bottom: 11px;
+}
+
+.cyclops-mission__choice-heading > span {
+  color: #ffbd7b;
   font-size: 11px;
-  line-height: 1.5;
+  font-weight: 750;
+  letter-spacing: 0.1em;
 }
 
-.cyclops-mission__choice > div {
-  display: flex;
-  gap: 7px;
+.cyclops-mission__choice-heading > strong {
+  color: var(--mission-text);
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
 }
 
-.cyclops-mission__choice button {
-  flex: 1;
-  padding: 8px 7px;
-  border: 1px solid #a87955;
-  background: #362018;
-  color: #f4d6a7;
+.cyclops-mission__choice-heading > small {
+  color: var(--mission-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cyclops-mission__choice-heading > b {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  padding: 5px 10px;
+  border: 1px solid #f0bd72;
+  border-radius: 999px;
+  color: #ffe1ab;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.cyclops-mission__strategy-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cyclops-mission__strategy-list button {
+  display: grid;
+  min-height: 70px;
+  grid-template-columns: 38px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #88664b;
+  border-radius: 8px;
+  background: #2b1d18;
+  color: #f7dfbd;
   font-family: inherit;
-  font-size: 11px;
+  text-align: left;
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
 }
 
-.cyclops-mission__choice button:last-child {
-  border-color: #6e7f79;
-  background: #18231f;
-  color: #b8cbc3;
+.cyclops-mission__strategy-list button.is-fighting {
+  border-color: #5d7972;
+  background: #162522;
+  color: #d5eee7;
 }
 
-.cyclops-mission__choice button:disabled {
-  cursor: default;
-  filter: grayscale(1);
-  opacity: 0.48;
+.cyclops-mission__choice button:hover,
+.cyclops-mission__choice button:focus-visible {
+  border-color: #ffd18d;
+  background-color: #3b2b23;
+  outline: 3px solid rgb(255 209 141 / 30%);
+  outline-offset: 2px;
+  transform: translateY(-1px);
+}
+
+.cyclops-mission__choice kbd {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 28%);
+  font-family: "Cinzel Local", serif;
+  font-size: 17px;
+}
+
+.cyclops-mission__strategy-list button > span {
+  display: grid;
+  gap: 3px;
+}
+
+.cyclops-mission__strategy-list strong,
+.cyclops-mission__charge strong {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.cyclops-mission__strategy-list small,
+.cyclops-mission__charge small {
+  color: #c1b8aa;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cyclops-mission__choice .cyclops-mission__charge {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  gap: 2px;
+  place-items: center;
+  margin-top: 10px;
+  padding: 7px 14px;
+  border-color: #89cdbb;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #17342e, #23493e);
+  color: #d9fff3;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.cyclops-mission__choice .cyclops-mission__charge:disabled {
+  border-color: #4f5d59;
+  background: #1a2221;
+  color: #9aa5a2;
+  opacity: 0.72;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.cyclops-mission__soldier-picker {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(44px, 1fr));
+  gap: 6px;
+}
+
+.cyclops-mission__soldier-picker button {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #64746f;
+  border-radius: 7px;
+  background: #111a18;
+  color: #d1d9d6;
+  font-family: "Cinzel Local", serif;
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.cyclops-mission__soldier-picker button.is-selected {
+  border-color: #f2bd63;
+  background: #59361c;
+  color: #fff0c2;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 219 145 / 35%),
+    0 0 14px rgb(242 189 99 / 16%);
+}
+
+.cyclops-mission__soldier-picker button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .mission-failure {
@@ -2025,8 +2344,12 @@ button:focus-visible {
 }
 
 @keyframes mission-failure-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .dialogue {

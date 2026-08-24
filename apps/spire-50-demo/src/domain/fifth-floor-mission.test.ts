@@ -5,14 +5,32 @@ import {
   CYCLOPS_WATCH_DURATION_MS,
   FIFTH_FLOOR_MISSION_DURATION_MS,
   advanceFifthFloorMission,
-  chooseFifthFloorSacrifice,
+  chooseFifthFloorStrategy,
+  commandFifthFloorSacrificeCharge,
+  completeFifthFloorSacrifice,
   createFifthFloorMission,
   escapeFifthFloorMission,
   hitCyclopsWithBasicAttack,
   hitCyclopsWithSkill,
   isCyclopsVisionActive,
+  loseFifthFloorAllies,
+  loseFifthFloorSoldiers,
   reachFifthFloorBeach,
+  toggleFifthFloorSacrifice,
+  updateFifthFloorAlliesAtBeach,
+  type FifthFloorMissionState,
 } from "./fifth-floor-mission.js";
+
+function prepareStealthSacrifice(
+  state = createFifthFloorMission(),
+  soldierIds: readonly [number, number] = [0, 1],
+): FifthFloorMissionState {
+  let current = chooseFifthFloorStrategy(state, true).state;
+  current = toggleFifthFloorSacrifice(current, soldierIds[0]).state;
+  current = toggleFifthFloorSacrifice(current, soldierIds[1]).state;
+  current = commandFifthFloorSacrificeCharge(current).state;
+  return completeFifthFloorSacrifice(current).state;
+}
 
 describe("fifth-floor cyclops mission", () => {
   it("starts a five-minute escape with fifteen allies and twenty sheep", () => {
@@ -25,60 +43,88 @@ describe("fifth-floor cyclops mission", () => {
       sheepCount: 20,
       flockLocation: "inside",
       flockDirection: "out",
+      strategy: "pending",
+      activeSoldierIds: Array.from({ length: 15 }, (_, index) => index),
+      selectedSacrificeIds: [],
       bossHp: 1_200,
       weakPoint: "dormant",
       reachedBeach: false,
+      alliesAtBeach: 0,
     });
   });
 
-  it("forces two sacrifices at the fifteen-second boundary", () => {
-    const before = advanceFifthFloorMission(
+  it("waits for the player's strategy without sacrificing soldiers", () => {
+    const waiting = advanceFifthFloorMission(
       createFifthFloorMission(),
-      CYCLOPS_WATCH_DURATION_MS - 1,
+      CYCLOPS_WATCH_DURATION_MS * 2,
     );
-    expect(before.state.alliesRemaining).toBe(15);
-    expect(before.state.phase).toBe("watching");
+    expect(waiting.state).toMatchObject({
+      phase: "watching",
+      strategy: "pending",
+      alliesRemaining: 15,
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+    });
+    expect(waiting.events).toEqual([]);
+  });
 
-    const boundary = advanceFifthFloorMission(before.state, 1);
-    expect(boundary.state.alliesRemaining).toBe(13);
-    expect(boundary.state.phase).toBe("sleeping");
-    expect(boundary.events[0]).toEqual({
+  it("requires the player to select exactly two living sacrifice soldiers", () => {
+    let state = chooseFifthFloorStrategy(createFifthFloorMission(), true).state;
+    expect(state.strategy).toBe("stealth-selecting");
+
+    state = toggleFifthFloorSacrifice(state, 4).state;
+    expect(commandFifthFloorSacrificeCharge(state).state).toBe(state);
+    state = toggleFifthFloorSacrifice(state, 9).state;
+    state = toggleFifthFloorSacrifice(state, 12).state;
+    expect(state.selectedSacrificeIds).toEqual([4, 9]);
+
+    const charging = commandFifthFloorSacrificeCharge(state);
+    expect(charging.state.strategy).toBe("stealth-charging");
+    expect(charging.events).toEqual([
+      { type: "sacrifice-charge-commanded", soldierIds: [4, 9] },
+    ]);
+
+    const sleeping = completeFifthFloorSacrifice(charging.state);
+    expect(sleeping.state).toMatchObject({
+      phase: "sleeping",
+      strategy: "stealth",
+      alliesRemaining: 13,
+      selectedSacrificeIds: [],
+      weakPoint: "primed",
+    });
+    expect(sleeping.state.activeSoldierIds).not.toContain(4);
+    expect(sleeping.state.activeSoldierIds).not.toContain(9);
+    expect(sleeping.events[0]).toEqual({
       type: "allies-sacrificed",
-      count: 2,
-      voluntary: false,
+      soldierIds: [4, 9],
     });
   });
 
-  it("lets a voluntary sacrifice begin sleep immediately", () => {
-    const result = chooseFifthFloorSacrifice(createFifthFloorMission(), true);
-    expect(result.state.phase).toBe("sleeping");
-    expect(result.state.phaseRemainingMs).toBe(CYCLOPS_SLEEP_DURATION_MS);
-    expect(result.state.alliesRemaining).toBe(13);
-    expect(result.events[0]).toMatchObject({ voluntary: true });
-  });
-
-  it("opens the gate without casualties after surviving the fight", () => {
-    const fighting = chooseFifthFloorSacrifice(
+  it("commands every soldier to charge immediately when fighting is chosen", () => {
+    const fighting = chooseFifthFloorStrategy(
       createFifthFloorMission(),
       false,
     );
-    expect(fighting.state.sacrificeDecision).toBe("fighting");
-    const survived = advanceFifthFloorMission(
+    expect(fighting.state.strategy).toBe("fighting");
+    expect(fighting.events).toEqual([{ type: "charge-commanded" }]);
+
+    const firstExchange = advanceFifthFloorMission(
       fighting.state,
       CYCLOPS_WATCH_DURATION_MS,
     );
-    expect(survived.state.alliesRemaining).toBe(15);
-    expect(survived.state.phase).toBe("gate-open");
-    expect(
-      survived.events.some((event) => event.type === "allies-sacrificed"),
-    ).toBe(false);
+    expect(firstExchange.state.alliesRemaining).toBe(15);
+    expect(firstExchange.state.phase).toBe("watching");
+
+    const defeatedSquad = loseFifthFloorAllies(firstExchange.state, 15).state;
+    const opened = advanceFifthFloorMission(
+      defeatedSquad,
+      CYCLOPS_WATCH_DURATION_MS,
+    );
+    expect(opened.state.alliesRemaining).toBe(0);
+    expect(opened.state.phase).toBe("gate-open");
   });
 
-  it("opens for thirty seconds and alternates the flock out then in", () => {
-    const sleeping = advanceFifthFloorMission(
-      createFifthFloorMission(),
-      CYCLOPS_WATCH_DURATION_MS,
-    ).state;
+  it("opens after sleep and alternates sheep moving outside then inside", () => {
+    const sleeping = prepareStealthSacrifice();
     const opened = advanceFifthFloorMission(
       sleeping,
       CYCLOPS_SLEEP_DURATION_MS,
@@ -96,9 +142,10 @@ describe("fifth-floor cyclops mission", () => {
       flockDirection: "in",
     });
 
+    const secondSleep = prepareStealthSacrifice(secondWatch, [2, 3]);
     const secondOpen = advanceFifthFloorMission(
-      secondWatch,
-      CYCLOPS_WATCH_DURATION_MS + CYCLOPS_SLEEP_DURATION_MS,
+      secondSleep,
+      CYCLOPS_SLEEP_DURATION_MS,
     ).state;
     const thirdWatch = advanceFifthFloorMission(
       secondOpen,
@@ -112,11 +159,12 @@ describe("fifth-floor cyclops mission", () => {
 
   it("is invariant to large or small elapsed-time chunks", () => {
     const elapsed = 105_000;
-    const once = advanceFifthFloorMission(
+    const started = chooseFifthFloorStrategy(
       createFifthFloorMission(),
-      elapsed,
+      false,
     ).state;
-    let chunked = createFifthFloorMission();
+    const once = advanceFifthFloorMission(started, elapsed).state;
+    let chunked = started;
     for (let time = 0; time < elapsed; time += 1_000) {
       chunked = advanceFifthFloorMission(chunked, 1_000).state;
     }
@@ -133,43 +181,50 @@ describe("fifth-floor cyclops mission", () => {
       failureReason: "timeout",
       remainingMs: 0,
     });
-    expect(failed.events.filter((event) => event.type === "mission-failed"))
-      .toHaveLength(1);
+    expect(
+      failed.events.filter((event) => event.type === "mission-failed"),
+    ).toHaveLength(1);
     expect(advanceFifthFloorMission(failed.state, 60_000).events).toEqual([]);
   });
 
-  it("allows escape only after the player reaches the beach", () => {
-    expect(escapeFifthFloorMission(createFifthFloorMission()).state.status).toBe(
-      "active",
-    );
+  it("allows escape only after the player and every survivor reach the beach", () => {
+    expect(
+      escapeFifthFloorMission(createFifthFloorMission()).state.status,
+    ).toBe("active");
     const reached = reachFifthFloorBeach(createFifthFloorMission()).state;
-    expect(escapeFifthFloorMission(reached).state.status).toBe("escaped");
+    expect(escapeFifthFloorMission(reached).state.status).toBe("active");
+    const gathered = updateFifthFloorAlliesAtBeach(reached, 15).state;
+    expect(escapeFifthFloorMission(gathered).state.status).toBe("escaped");
+
+    const afterLoss = loseFifthFloorAllies(reached, 3).state;
+    const survivorsGathered = updateFifthFloorAlliesAtBeach(
+      afterLoss,
+      12,
+    ).state;
+    expect(escapeFifthFloorMission(survivorsGathered).state.status).toBe(
+      "escaped",
+    );
   });
 
-  it("requires one sleeping basic hit before an eye hit can block vision", () => {
-    const sleeping = advanceFifthFloorMission(
-      createFifthFloorMission(),
-      CYCLOPS_WATCH_DURATION_MS,
-    ).state;
-    expect(sleeping.weakPoint).toBe("primed");
-
-    const awakened = hitCyclopsWithBasicAttack(sleeping, 20, false);
-    expect(awakened.state).toMatchObject({
-      phase: "watching",
-      weakPoint: "exposed",
-      bossHp: 1_200,
+  it("opens the gate and blocks attacks when the sleeping eye is pierced", () => {
+    const sleeping = prepareStealthSacrifice();
+    const bodyHit = hitCyclopsWithBasicAttack(sleeping, 20, false);
+    expect(bodyHit.state).toMatchObject({
+      phase: "sleeping",
+      weakPoint: "primed",
+      bossHp: 1_180,
     });
-    expect(isCyclopsVisionActive(awakened.state)).toBe(true);
 
-    const blinded = hitCyclopsWithBasicAttack(awakened.state, 20, true);
+    const blinded = hitCyclopsWithBasicAttack(sleeping, 20, true);
     expect(blinded.state).toMatchObject({
+      phase: "gate-open",
       weakPoint: "blinded",
       bossHp: 1_140,
     });
     expect(isCyclopsVisionActive(blinded.state)).toBe(false);
   });
 
-  it("allows skills to damage the boss without exposing or blinding the eye", () => {
+  it("allows skills to damage the boss without replacing the eye attack", () => {
     const hit = hitCyclopsWithSkill(createFifthFloorMission(), 35);
     expect(hit.state).toMatchObject({ bossHp: 1_165, weakPoint: "dormant" });
     expect(hit.events).toContainEqual({
@@ -177,6 +232,14 @@ describe("fifth-floor cyclops mission", () => {
       amount: 35,
       hp: 1_165,
     });
+  });
+
+  it("removes the exact soldiers caught by an attack", () => {
+    const result = loseFifthFloorSoldiers(createFifthFloorMission(), [3, 8]);
+    expect(result.state.alliesRemaining).toBe(13);
+    expect(result.state.activeSoldierIds).not.toContain(3);
+    expect(result.state.activeSoldierIds).not.toContain(8);
+    expect(result.events).toEqual([{ type: "allies-lost", count: 2 }]);
   });
 
   it("ignores invalid elapsed time", () => {
