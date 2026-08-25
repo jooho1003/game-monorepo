@@ -212,12 +212,12 @@ const CYCLOPS_LABEL_OFFSET = 250;
 const MISSION_SOLDIER_RADIUS = 25;
 const MISSION_SHEEP_RADIUS = 22;
 const CYCLOPS_STRIKE_RADIUS = 82;
-const CYCLOPS_STRIKE_WARNING_MS = 850;
-const CYCLOPS_STRIKE_COOLDOWN_MS = 1_700;
+const CYCLOPS_STRIKE_WARNING_MS = 720;
+const CYCLOPS_STRIKE_COOLDOWN_MS = 1_450;
 const CYCLOPS_MELEE_GUARD_RANGE = 300;
 const MISSION_SHEEP_SPEED = 138;
 const MISSION_SHEEP_YIELD_SPEED = 104;
-const MISSION_SHEEP_FRAME_DURATION = 250;
+const MISSION_SHEEP_FRAME_DURATION = 160;
 const MISSION_SHOVE_RANGE = 118;
 const MISSION_SHOVE_DISTANCE = 112;
 const MISSION_SHOVE_COOLDOWN_MS = 360;
@@ -382,7 +382,6 @@ export class PlayScene extends Phaser.Scene {
   private nextMissionAnimalSoundAt = 0;
   private nextImpactSoundAt = 0;
   private nextMissionShoveAt = 0;
-  private caveCollisionGuide?: Phaser.GameObjects.Graphics;
 
   private get cyclopsBoss(): Phaser.GameObjects.Sprite | undefined {
     return this.cyclopsActor?.node;
@@ -731,7 +730,6 @@ export class PlayScene extends Phaser.Scene {
     this.nextMissionAnimalSoundAt = 0;
     this.nextImpactSoundAt = 0;
     this.nextMissionShoveAt = 0;
-    this.caveCollisionGuide = undefined;
     this.transitioning = false;
     this.returnPortalCreated = false;
     this.cameras.main.setBackgroundColor(zoneBackground(this.zone));
@@ -1058,49 +1056,6 @@ export class PlayScene extends Phaser.Scene {
       this.add.circle(x, y, 92, 0xff7a31, 0.05).setDepth(0);
       this.add.circle(x, y, 14, 0xff9a42, 0.34).setDepth(1);
       this.add.circle(x, y - 3, 6, 0xffe09a, 0.9).setDepth(2);
-    }
-    this.caveCollisionGuide = this.add
-      .graphics()
-      .setDepth(10.5)
-      .setBlendMode(Phaser.BlendModes.ADD);
-    this.updateCaveCollisionGuide();
-  }
-
-  private updateCaveCollisionGuide(): void {
-    if (!this.caveCollisionGuide) return;
-    this.caveCollisionGuide.clear();
-    this.caveCollisionGuide.fillStyle(0xff0000, 0.1);
-    this.caveCollisionGuide.lineStyle(8, 0xff1010, 1);
-    for (const collider of CAVE_STRUCTURE_COLLIDERS) {
-      this.caveCollisionGuide.fillRect(
-        collider.x,
-        collider.y,
-        collider.width,
-        collider.height,
-      );
-      this.caveCollisionGuide.strokeRect(
-        collider.x,
-        collider.y,
-        collider.width,
-        collider.height,
-      );
-    }
-    if (
-      this.caveGateCollider &&
-      this.collisionRects.includes(this.caveGateCollider)
-    ) {
-      this.caveCollisionGuide.fillRect(
-        this.caveGateCollider.x,
-        this.caveGateCollider.y,
-        this.caveGateCollider.width,
-        this.caveGateCollider.height,
-      );
-      this.caveCollisionGuide.strokeRect(
-        this.caveGateCollider.x,
-        this.caveGateCollider.y,
-        this.caveGateCollider.width,
-        this.caveGateCollider.height,
-      );
     }
   }
 
@@ -1968,7 +1923,7 @@ export class PlayScene extends Phaser.Scene {
     this.addInstruction(
       CAVE_PLAYER_SPAWN.x + 190,
       CAVE_PLAYER_SPAWN.y + 104,
-      "G: 병사·양 밀치기 / 잠든 눈 타격 · 빨간선: 이미지에서 인식한 충돌 구조물",
+      "G: 병사·양 밀치기 / 잠든 눈 타격",
     );
     this.createPortal(
       BEACH_REST_GATE_POSITION.x,
@@ -2073,7 +2028,6 @@ export class PlayScene extends Phaser.Scene {
       alliesAtBeach,
     );
     this.fifthFloorMission = gathered.state;
-    this.updateCaveCollisionGuide();
 
     this.publishFifthFloorMission();
   }
@@ -2324,7 +2278,8 @@ export class PlayScene extends Phaser.Scene {
       );
       const fighting =
         this.fifthFloorMission?.strategy === "fighting" &&
-        this.fifthFloorMission.phase === "watching";
+        this.fifthFloorMission.phase !== "sleeping" &&
+        this.fifthFloorMission.bossHp > 0;
       const sacrificing =
         this.fifthFloorMission?.strategy === "stealth-charging" &&
         selectedSacrifices.has(soldier.index);
@@ -2679,8 +2634,23 @@ export class PlayScene extends Phaser.Scene {
     const vector = new Phaser.Math.Vector2(targetX - node.x, targetY - node.y);
     let direction = currentDirection;
     let moved = false;
+    const startX = node.x;
+    const startY = node.y;
     const arrivalRadius = radius === MISSION_SHEEP_RADIUS ? 10 : 8;
-    if (vector.length() > arrivalRadius) {
+    // A walker parked just past the arrival radius used to keep inching at its
+    // target every frame, so a resting crowd twitched in place. Once settled it
+    // stays planted until the target genuinely moves away.
+    const resumeRadius = arrivalRadius + 26;
+    const distanceToTarget = vector.length();
+    if (distanceToTarget <= arrivalRadius) {
+      node.setData("walkerSettled", true);
+    } else if (distanceToTarget > resumeRadius) {
+      node.setData("walkerSettled", false);
+    }
+    if (
+      distanceToTarget > arrivalRadius &&
+      node.getData("walkerSettled") !== true
+    ) {
       vector.normalize();
       const remainingDistance = Math.max(
         0,
@@ -2763,7 +2733,12 @@ export class PlayScene extends Phaser.Scene {
     }
     const isSheep = node.getData("missionKind") !== "soldier";
     const walkPhase = Number(node.getData("walkPhase")) || 0;
-    const frame = moved
+    // Only a real stride counts as walking — sub-pixel collision nudges no
+    // longer flip walk frames or rock the sprite while it stands still.
+    const striding =
+      moved &&
+      Phaser.Math.Distance.Between(startX, startY, node.x, node.y) > 0.45;
+    const frame = striding
       ? Math.floor(
           (time + walkPhase) /
             (isSheep ? MISSION_SHEEP_FRAME_DURATION : MISSION_WALK_FRAME_DURATION),
@@ -2771,9 +2746,22 @@ export class PlayScene extends Phaser.Scene {
       : 0;
     const textureKey = isSheep ? "sheep-walk-8d" : "soldier-walk-8d";
     node.setTexture(textureKey, `${direction}-${frame}`).setFlipX(false);
-    // A grazing animal never glides — a light body sway sells the trot.
+    // A grazing animal never glides — a gentle sway plus a hop bob sells the
+    // trot; soldiers get a subtle stride bob so marching reads naturally.
     if (isSheep) {
-      node.setAngle(moved ? Math.sin((time + walkPhase) / 150) * 3.2 : 0);
+      if (striding) {
+        const trot = (time + walkPhase) / 150;
+        node.setAngle(Math.sin(trot) * 3.4);
+        node.setOrigin(0.5, 0.72 + Math.abs(Math.sin(trot)) * 0.035);
+      } else {
+        node.setAngle(0);
+        node.setOrigin(0.5, 0.72);
+      }
+    } else if (striding) {
+      const stride = (time + walkPhase) / 165;
+      node.setOrigin(0.5, 0.78 + Math.abs(Math.sin(stride)) * 0.024);
+    } else {
+      node.setOrigin(0.5, 0.78);
     }
     return direction;
   }
@@ -2921,7 +2909,16 @@ export class PlayScene extends Phaser.Scene {
     // The Cyclops deliberately clears a lane while operating the door. Sheep
     // in that transit lane must not deadlock against the player or the boss.
     if (ignoreMajorActors) return true;
-    if (doCaveBodiesOverlap({ x, y }, radius, this.player, 17)) {
+    // A charging squad packs in with crowd priority, and a sleep-walking boss
+    // can be dropped right on top of bystanders. A walker already pressed into
+    // a body must always be able to step away — only approaching is rejected.
+    const stepsAway = (blocker: CavePoint) =>
+      Phaser.Math.Distance.Between(x, y, blocker.x, blocker.y) >=
+      Phaser.Math.Distance.Between(node.x, node.y, blocker.x, blocker.y);
+    if (
+      doCaveBodiesOverlap({ x, y }, radius, this.player, 17) &&
+      !stepsAway(this.player)
+    ) {
       return false;
     }
     if (
@@ -2931,7 +2928,8 @@ export class PlayScene extends Phaser.Scene {
         radius,
         this.cyclopsBoss,
         CYCLOPS_BODY_RADIUS,
-      )
+      ) &&
+      !stepsAway(this.cyclopsBoss)
     ) {
       return false;
     }
@@ -2940,7 +2938,8 @@ export class PlayScene extends Phaser.Scene {
       (body) =>
         body.node !== node &&
         body.node.active &&
-        doCaveBodiesOverlap({ x, y }, radius, body.node, body.radius),
+        doCaveBodiesOverlap({ x, y }, radius, body.node, body.radius) &&
+        !stepsAway(body.node),
     );
   }
 
@@ -2985,8 +2984,8 @@ export class PlayScene extends Phaser.Scene {
       if (event.type === "flock-moved") {
         this.showBossCallout(
           event.location === "outside"
-            ? "30초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 들여보냅니다"
-            : "30초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 내보냅니다",
+            ? "20초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 들여보냅니다"
+            : "20초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 내보냅니다",
           "#ffd27a",
         );
         continue;
@@ -3067,6 +3066,9 @@ export class PlayScene extends Phaser.Scene {
       if (event.type === "boss-roared") {
         this.cyclopsAction = "roar";
         this.renderCyclopsAction(this.time.now);
+        // Startled awake mid-doze: come up swinging. The eye-stab path clears
+        // this again right after via its vision-obscured event.
+        this.cyclopsAggroActive = true;
         playSfx("giantAlert", { volume: 0.72, rate: 0.72 });
         this.cameras.main.shake(520, 0.0062);
         continue;
@@ -3964,12 +3966,34 @@ export class PlayScene extends Phaser.Scene {
       if (bossDistance <= CYCLOPS_CONTACT_AGGRO_DISTANCE) {
         this.triggerCyclopsAggro();
       }
-      if (bossDistance < CYCLOPS_BODY_RADIUS + 17) return false;
+      // Gate tweens can drop the boss on top of the player. A body may block
+      // approach, never escape: a step that gains distance is always legal.
+      if (
+        bossDistance < CYCLOPS_BODY_RADIUS + 17 &&
+        bossDistance <
+          Phaser.Math.Distance.Between(
+            this.player.x,
+            this.player.y,
+            this.cyclopsBoss.x,
+            this.cyclopsBoss.y,
+          )
+      ) {
+        return false;
+      }
     }
+    // Same rule for the crowd: soldiers and sheep pressed against the player
+    // must never wall them in — only moves toward a body are rejected.
     return !this.missionCollisionBodies().some(
       (body) =>
         body.node.active &&
-        doCaveBodiesOverlap({ x, y }, 17, body.node, body.radius),
+        doCaveBodiesOverlap({ x, y }, 17, body.node, body.radius) &&
+        Phaser.Math.Distance.Between(x, y, body.node.x, body.node.y) <
+          Phaser.Math.Distance.Between(
+            this.player.x,
+            this.player.y,
+            body.node.x,
+            body.node.y,
+          ),
     );
   }
 
