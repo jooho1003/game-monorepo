@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#05080b" />
+    <title>종말의 탑 | 메인 트레일러</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+        background: #05080b;
+        color: #f4ead8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at 50% 5%, rgb(26 70 91 / 42%), transparent 48%),
+          linear-gradient(180deg, #071016, #030506 72%);
+      }
+
+      main {
+        width: min(1120px, 100%);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        color: #e7c781;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(28px, 4vw, 48px);
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-align: center;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #a9b7bb;
+        text-align: center;
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        border: 1px solid rgb(231 199 129 / 35%);
+        border-radius: 8px;
+        background: #000;
+        box-shadow: 0 24px 80px rgb(0 0 0 / 65%);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>종말의 탑</h1>
+      <p>메인 게임 플레이 트레일러</p>
+      <video
+        controls
+        playsinline
+        preload="metadata"
+        poster="/assets/marketing/종말의탑1920x1080-v5.png"
+      >
+        <source src="/trailers/tower-of-the-end-main-trailer-ko.mp4" type="video/mp4" />
+        브라우저가 동영상 재생을 지원하지 않습니다.
+      </video>
+    </main>
+  </body>
+</html>

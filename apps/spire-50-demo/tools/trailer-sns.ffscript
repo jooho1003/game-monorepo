@@ -1,0 +1,33 @@
+[0:v]trim=start=10:end=13.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v0];
+[1:v]trim=start=2:end=5.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v1];
+[2:v]trim=start=6:end=9.8,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v2];
+[3:v]trim=start=11:end=15.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v3];
+[4:v]trim=start=10:end=14,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v4];
+[5:v]trim=start=13:end=17,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v5];
+[6:v]trim=start=9:end=13,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v6];
+[7:v]trim=start=2:end=5.7,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v7];
+[v0][v1]xfade=transition=fadeblack:duration=0.25:offset=3.25[x1];
+[x1][v2]xfade=transition=fade:duration=0.25:offset=6.5[x2];
+[x2][v3]xfade=transition=fade:duration=0.25:offset=10.05[x3];
+[x3][v4]xfade=transition=fade:duration=0.25:offset=14.3[x4];
+[x4][v5]xfade=transition=fadeblack:duration=0.25:offset=18.05[x5];
+[x5][v6]xfade=transition=fade:duration=0.25:offset=21.8[x6];
+[x6][v7]xfade=transition=fadeblack:duration=0.25:offset=25.55[x7];
+[x7]eq=contrast=1.04:saturation=1.07,unsharp=5:5:0.24:5:5:0,
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='5층에서 기다리는 단 하나의 눈':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,0.25,3.05)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='50층을 향한 등반':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,3.7,6.2)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='5가지 무기':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,6.8,9.7)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='동료와 함께':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,10.4,14)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='때로는 적과 맞서':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,14.6,17.7)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='전략을 선택하고':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,18.3,21.5)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='길을 열어라':fontcolor=white:fontsize=58:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,22.1,25.25)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/cinzel/Cinzel-Variable.ttf:text='ENJOY PLAY':fontcolor=0xF2D79A:fontsize=82:box=1:boxcolor=0x020608C4:boxborderw=28:x=(w-text_w)/2:y=h*0.76:enable='between(t,26,29)',
+fade=t=out:st=28.5:d=0.75[vout];
+[8:a]atrim=start=34:end=63.25,asetpts=PTS-STARTPTS,volume=0.54,afade=t=in:st=0:d=0.5,afade=t=out:st=27:d=2.1[music];
+[9:a]volume=0.95,adelay=300:all=1[s1];
+[10:a]volume=0.7,adelay=6900:all=1[s2];
+[11:a]volume=0.75,adelay=10800:all=1[s3];
+[12:a]volume=0.75,adelay=15000:all=1[s4];
+[13:a]volume=0.95,adelay=18500:all=1[s5];
+[14:a]volume=0.9,adelay=22400:all=1[s6];
+[music][s1][s2][s3][s4][s5][s6]amix=inputs=7:duration=first:dropout_transition=0,alimiter=limit=0.94,loudnorm=I=-16:TP=-1.5:LRA=9[aout]

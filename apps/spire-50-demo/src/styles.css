@@ -1513,6 +1513,53 @@ button:focus-visible {
   -webkit-font-smoothing: antialiased;
 }
 
+html[data-capture-mode="trailer"],
+html[data-capture-mode="trailer"] body,
+html[data-capture-mode="trailer"] button,
+html[data-capture-mode="trailer"] canvas {
+  cursor: none !important;
+}
+
+html[data-capture-mode="trailer"] .title-screen__edition,
+html[data-capture-mode="trailer"] .title-panel__hint,
+html[data-capture-mode="trailer"] .game-screen__footer {
+  display: none;
+}
+
+html[data-capture-mode="trailer"] .skill-slot {
+  bottom: 28px;
+}
+
+html[data-capture-mode="trailer"] .hud-objective span {
+  display: none;
+}
+
+html[data-capture-hud="none"] .hud-status,
+html[data-capture-hud="none"] .hud-objective,
+html[data-capture-hud="none"] .skill-slot,
+html[data-capture-hud="none"] .weapon-stamp,
+html[data-capture-hud="none"] .cyclops-mission {
+  display: none;
+}
+
+html[data-capture-hud="clean"] .hud-status,
+html[data-capture-hud="clean"] .weapon-stamp,
+html[data-capture-hud="clean"] .skill-slot {
+  scale: 0.92;
+}
+
+html[data-capture-hud="clean"] .hud-status {
+  transform-origin: top left;
+}
+
+html[data-capture-hud="clean"] .weapon-stamp {
+  transform-origin: top right;
+}
+
+html[data-capture-hud="clean"] .skill-slot {
+  transform-origin: bottom right;
+}
+
 .game-canvas {
   position: absolute;
   inset: 0;

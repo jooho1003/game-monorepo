@@ -26,3 +26,7 @@ build/
 # playwright mcp session output
 .playwright-mcp/
 .env*
+
+# local trailer capture and review intermediates
+.trailer-capture/
+deliverables/

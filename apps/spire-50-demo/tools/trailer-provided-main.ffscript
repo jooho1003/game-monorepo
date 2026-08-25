@@ -1,0 +1,52 @@
+[0:v]trim=start=0:end=2.5,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v0];
+[0:v]trim=start=4:end=7.5,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v1];
+[0:v]trim=start=9:end=12.5,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v2];
+[0:v]trim=start=17:end=22,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v3];
+[0:v]trim=start=43:end=48,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v4];
+[0:v]trim=start=65:end=70,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v5];
+[0:v]trim=start=190:end=195,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v6];
+[1:v]trim=start=15:end=21,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v7];
+[1:v]trim=start=27:end=33,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v8];
+[1:v]trim=start=78:end=84,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v9];
+[1:v]trim=start=103:end=109,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v10];
+[2:v]trim=duration=5.5,setpts=PTS-STARTPTS,fps=60,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p[v11];
+[v0][v1]xfade=transition=fade:duration=0.3:offset=2.2[x1];
+[x1][v2]xfade=transition=fade:duration=0.3:offset=5.4[x2];
+[x2][v3]xfade=transition=fade:duration=0.3:offset=8.6[x3];
+[x3][v4]xfade=transition=fade:duration=0.3:offset=13.3[x4];
+[x4][v5]xfade=transition=fade:duration=0.3:offset=18.0[x5];
+[x5][v6]xfade=transition=fade:duration=0.3:offset=22.7[x6];
+[x6][v7]xfade=transition=fadeblack:duration=0.3:offset=27.4[x7];
+[x7][v8]xfade=transition=fade:duration=0.3:offset=33.1[x8];
+[x8][v9]xfade=transition=fade:duration=0.3:offset=38.8[x9];
+[x9][v10]xfade=transition=fade:duration=0.3:offset=44.5[x10];
+[x10][v11]xfade=transition=fadeblack:duration=0.3:offset=50.2,
+eq=contrast=1.03:saturation=1.05,unsharp=5:5:0.18:5:5:0,
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='무기를 선택하고':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015C0:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,3,8)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='동료와 함께 탑을 오른다':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015C0:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,9,13)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='매 층, 달라지는 전장':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015C0:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,14,27)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='5층에서 기다리는 단 하나의 눈':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015C0:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,28,39)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='싸울 것인가, 살아남을 것인가':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015C0:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,40,49.8)'[vout];
+[0:a]atrim=start=0:end=2.5,asetpts=PTS-STARTPTS[a0];
+[0:a]atrim=start=4:end=7.5,asetpts=PTS-STARTPTS[a1];
+[0:a]atrim=start=9:end=12.5,asetpts=PTS-STARTPTS[a2];
+[0:a]atrim=start=17:end=22,asetpts=PTS-STARTPTS[a3];
+[0:a]atrim=start=43:end=48,asetpts=PTS-STARTPTS[a4];
+[0:a]atrim=start=65:end=70,asetpts=PTS-STARTPTS[a5];
+[0:a]atrim=start=190:end=195,asetpts=PTS-STARTPTS[a6];
+[1:a]atrim=start=15:end=21,asetpts=PTS-STARTPTS[a7];
+[1:a]atrim=start=27:end=33,asetpts=PTS-STARTPTS[a8];
+[1:a]atrim=start=78:end=84,asetpts=PTS-STARTPTS[a9];
+[1:a]atrim=start=103:end=109,asetpts=PTS-STARTPTS[a10];
+[a0][a1]acrossfade=d=0.3:c1=tri:c2=tri[ax1];
+[ax1][a2]acrossfade=d=0.3:c1=tri:c2=tri[ax2];
+[ax2][a3]acrossfade=d=0.3:c1=tri:c2=tri[ax3];
+[ax3][a4]acrossfade=d=0.3:c1=tri:c2=tri[ax4];
+[ax4][a5]acrossfade=d=0.3:c1=tri:c2=tri[ax5];
+[ax5][a6]acrossfade=d=0.3:c1=tri:c2=tri[ax6];
+[ax6][a7]acrossfade=d=0.3:c1=tri:c2=tri[ax7];
+[ax7][a8]acrossfade=d=0.3:c1=tri:c2=tri[ax8];
+[ax8][a9]acrossfade=d=0.3:c1=tri:c2=tri[ax9];
+[ax9][a10]acrossfade=d=0.3:c1=tri:c2=tri,volume=0.62,afade=t=out:st=49.7:d=0.8,apad=pad_dur=6[game];
+[3:a]atrim=start=12:end=67.7,asetpts=PTS-STARTPTS,volume=0.38,afade=t=in:st=0:d=1,afade=t=out:st=52.7:d=3[music];
+[music][game]amix=inputs=2:duration=first:dropout_transition=0,alimiter=limit=0.94,loudnorm=I=-14:TP=-1.5:LRA=8[aout]

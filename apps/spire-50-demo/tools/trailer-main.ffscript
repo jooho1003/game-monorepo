@@ -1,0 +1,42 @@
+[0:v]trim=start=2:end=6.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v0];
+[1:v]trim=start=8.5:end=13,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v1];
+[2:v]trim=start=4.8:end=10.3,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v2];
+[3:v]trim=start=12:end=17,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v3];
+[4:v]trim=start=10.5:end=16.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v4];
+[5:v]trim=start=9:end=15,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v5];
+[6:v]trim=start=13:end=17.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v6];
+[7:v]trim=start=11.5:end=16,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v7];
+[8:v]trim=start=12.5:end=19,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v8];
+[9:v]trim=start=8.5:end=14.5,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v9];
+[10:v]trim=start=2:end=8,setpts=PTS-STARTPTS,fps=30,format=yuv420p[v10];
+[v0][v1]xfade=transition=fade:duration=0.3:offset=4.2[x1];
+[x1][v2]xfade=transition=fadeblack:duration=0.3:offset=8.4[x2];
+[x2][v3]xfade=transition=fade:duration=0.3:offset=13.6[x3];
+[x3][v4]xfade=transition=fade:duration=0.3:offset=18.3[x4];
+[x4][v5]xfade=transition=fade:duration=0.3:offset=24[x5];
+[x5][v6]xfade=transition=fade:duration=0.3:offset=29.7[x6];
+[x6][v7]xfade=transition=fade:duration=0.3:offset=33.9[x7];
+[x7][v8]xfade=transition=fadeblack:duration=0.3:offset=38.1[x8];
+[x8][v9]xfade=transition=fade:duration=0.3:offset=44.3[x9];
+[x9][v10]xfade=transition=fadeblack:duration=0.3:offset=50[x10];
+[x10]eq=contrast=1.035:saturation=1.06,unsharp=5:5:0.22:5:5:0,
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='탑은 선택을 기억한다':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,4.6,8.1)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='다섯 무기 · 하나의 등반':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,8.8,13.1)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='모든 만남은 운명을 바꾼다':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,14,18)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='동료와 함께 돌파하라':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,19,23.5)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='때로는 그들이 적이 된다':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,24.5,29)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='살아남아 다음 층을 준비하라':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,30,33.6)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='50층을 향한 끝없는 등반':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,34.4,37.8)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='병사들과 맞서 싸우거나':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,39,43.8)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/song-myung/SongMyung-Regular.ttf:text='희생으로 길을 열어라':fontcolor=white:fontsize=54:box=1:boxcolor=0x061015B8:boxborderw=22:x=(w-text_w)/2:y=h*0.79:enable='between(t,44.8,49.5)',
+drawtext=fontfile=apps/spire-50-demo/public/assets/fonts/cinzel/Cinzel-Variable.ttf:text='ENJOY PLAY':fontcolor=0xF2D79A:fontsize=78:box=1:boxcolor=0x020608C4:boxborderw=28:x=(w-text_w)/2:y=h*0.76:enable='between(t,50.6,55.8)',
+fade=t=out:st=55.2:d=0.8[vout];
+[11:a]atrim=start=12:end=68,asetpts=PTS-STARTPTS,volume=0.48,afade=t=in:st=0:d=1.2,afade=t=out:st=53:d=3[music];
+[12:a]volume=0.7,adelay=8500:all=1[s1];
+[13:a]volume=0.7,adelay=19200:all=1[s2];
+[14:a]volume=0.65,adelay=25300:all=1[s3];
+[15:a]volume=0.65,adelay=30700:all=1[s4];
+[16:a]volume=0.9,adelay=39100:all=1[s5];
+[17:a]volume=0.9,adelay=44800:all=1[s6];
+[18:a]volume=0.85,adelay=47800:all=1[s7];
+[music][s1][s2][s3][s4][s5][s6][s7]amix=inputs=8:duration=first:dropout_transition=0,alimiter=limit=0.94,loudnorm=I=-16:TP=-1.5:LRA=9[aout]
