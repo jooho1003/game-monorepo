@@ -1,0 +1,14 @@
+# Build output — Vercel rebuilds from source
+dist/
+apps/*/dist/
+
+# Raw art working files, not referenced by the build (52MB)
+apps/spire-50-demo/art-source/
+
+# Reference material, not part of any app (59MB)
+references images/
+
+# Local agent runtime
+.bkit/
+.playwright-mcp/
+.turbo/

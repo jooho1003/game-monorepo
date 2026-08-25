@@ -25,3 +25,4 @@ build/
 
 # playwright mcp session output
 .playwright-mcp/
+.env*
