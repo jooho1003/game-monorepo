@@ -22,10 +22,10 @@ export const CYCLOPS_SLEEP_POSITION: CavePoint = { x: 1568, y: 780 };
 export const CYCLOPS_FACING_ANGLE = Math.PI;
 export const CYCLOPS_VIEW_DISTANCE = 720;
 export const CYCLOPS_VIEW_HALF_ANGLE = Math.PI / 5.2;
-export const CYCLOPS_GATE_GUARD_RANGE = 680;
-export const CYCLOPS_BLINDED_GUARD_RANGE = 108;
-export const CYCLOPS_GATE_STRIKE_RADIUS = 118;
-export const CYCLOPS_BLINDED_STRIKE_RADIUS = 30;
+export const CYCLOPS_GATE_GUARD_RANGE = 600;
+export const CYCLOPS_BLINDED_GUARD_RANGE = 200;
+export const CYCLOPS_GATE_STRIKE_RADIUS = 102;
+export const CYCLOPS_BLINDED_STRIKE_RADIUS = 50;
 export const PLAYER_DISPLAY_SIZE = 84;
 export const CYCLOPS_DISPLAY_SIZE = PLAYER_DISPLAY_SIZE * 6;
 export const CAVE_GATE_POSITION: CavePoint = { x: 2490, y: 800 };
@@ -102,14 +102,14 @@ export function cyclopsGuardAttackProfile(
     ? {
         detectionRange: CYCLOPS_BLINDED_GUARD_RANGE,
         strikeRadius: CYCLOPS_BLINDED_STRIKE_RADIUS,
-        warningMs: 1_250,
-        cooldownMs: 3_400,
+        warningMs: 1_200,
+        cooldownMs: 3_300,
       }
     : {
         detectionRange: CYCLOPS_GATE_GUARD_RANGE,
         strikeRadius: CYCLOPS_GATE_STRIKE_RADIUS,
-        warningMs: 640,
-        cooldownMs: 1_150,
+        warningMs: 660,
+        cooldownMs: 1_300,
       };
 }
 

@@ -117,13 +117,13 @@ describe("fifth-floor cave layout", () => {
     expect(isPointInCyclopsStrike({ x: 683, y: 500 }, target, 82)).toBe(false);
   });
 
-  it("shrinks the gate guard attack dramatically after the eye is hit", () => {
+  it("shrinks the gate guard attack after the eye is hit while keeping the doorway contested", () => {
     const normal = cyclopsGuardAttackProfile(false);
     const blinded = cyclopsGuardAttackProfile(true);
     expect(normal.detectionRange).toBe(CYCLOPS_GATE_GUARD_RANGE);
     expect(blinded.detectionRange).toBe(CYCLOPS_BLINDED_GUARD_RANGE);
-    expect(blinded.detectionRange).toBeLessThan(normal.detectionRange / 3);
-    expect(blinded.strikeRadius).toBeLessThan(normal.strikeRadius / 2);
+    expect(blinded.detectionRange).toBeLessThan(normal.detectionRange / 2);
+    expect(blinded.strikeRadius).toBeLessThan(normal.strikeRadius);
     expect(isPointInCyclopsGuardRange({ x: 500, y: 0 }, { x: 0, y: 0 }, false)).toBe(true);
     expect(isPointInCyclopsGuardRange({ x: 500, y: 0 }, { x: 0, y: 0 }, true)).toBe(false);
   });
