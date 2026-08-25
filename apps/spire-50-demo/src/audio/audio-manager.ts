@@ -99,7 +99,20 @@ export function unlockAudio(): void {
   unlocked = true;
   Howler.volume(0.72);
   void Howler.ctx?.resume();
+  warmSpeechVoices();
   syncMusic();
+}
+
+// Chrome hands back an empty voice list until it has been queried once and
+// voiceschanged has fired — without this warm-up the first combat shouts fall
+// back to the browser's default (usually female) voice.
+function warmSpeechVoices(): void {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const synth = window.speechSynthesis;
+  synth.getVoices();
+  synth.addEventListener?.("voiceschanged", () => {
+    synth.getVoices();
+  });
 }
 
 export function setMusicContext(context: MusicContext): void {
@@ -186,8 +199,10 @@ export function playCombatVoice(
   utterance.lang = "ko-KR";
   const maleVoice = selectMaleKoreanVoice(window.speechSynthesis.getVoices());
   if (maleVoice) utterance.voice = maleVoice;
-  utterance.rate = action === "skill" ? 1.18 : 1.34;
-  utterance.pitch = 0.58;
+  utterance.rate = action === "skill" ? 1.12 : 1.26;
+  // Deep pitch keeps the shout masculine even when the platform only offers a
+  // female Korean voice.
+  utterance.pitch = action === "skill" ? 0.26 : 0.3;
   utterance.volume = action === "skill" ? 0.72 : 0.52;
   window.speechSynthesis.speak(utterance);
 }
