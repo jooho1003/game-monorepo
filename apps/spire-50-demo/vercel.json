@@ -5,7 +5,6 @@
   "outputDirectory": "dist",
   "headers": [
     {
-      "//": "Vite content-hashes its own output and drops it directly in /assets. Game art, audio and fonts keep their names across deploys, so they stay on the default revalidating cache and are deliberately not matched here.",
       "source": "/assets/:file([^/]+\\.(?:js|css))",
       "headers": [
         {
