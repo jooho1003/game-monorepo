@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  CYCLOPS_GATE_OPEN_DURATION_MS,
   CYCLOPS_SLEEP_DURATION_MS,
   CYCLOPS_WATCH_DURATION_MS,
+  FIFTH_FLOOR_MIN_ESCAPE_ALLIES,
   FIFTH_FLOOR_MISSION_DURATION_MS,
   advanceFifthFloorMission,
   chooseFifthFloorStrategy,
   commandFifthFloorSacrificeCharge,
+  completeFifthFloorFlockTransit,
   completeFifthFloorSacrifice,
   createFifthFloorMission,
   escapeFifthFloorMission,
@@ -16,13 +17,25 @@ import {
   loseFifthFloorAllies,
   loseFifthFloorSoldiers,
   reachFifthFloorBeach,
+  revokeFifthFloorStrategy,
   toggleFifthFloorSacrifice,
   updateFifthFloorAlliesAtBeach,
+  updateFifthFloorSheepAtBeach,
   type FifthFloorMissionState,
 } from "./fifth-floor-mission.js";
 
-function prepareStealthSacrifice(
+function prepareTactics(
   state = createFifthFloorMission(),
+): FifthFloorMissionState {
+  const gateOpen = advanceFifthFloorMission(
+    state,
+    CYCLOPS_WATCH_DURATION_MS,
+  ).state;
+  return completeFifthFloorFlockTransit(gateOpen).state;
+}
+
+function prepareStealthSacrifice(
+  state = prepareTactics(),
   soldierIds: readonly [number, number] = [0, 1],
 ): FifthFloorMissionState {
   let current = chooseFifthFloorStrategy(state, true).state;
@@ -38,12 +51,13 @@ describe("fifth-floor cyclops mission", () => {
       status: "active",
       remainingMs: 300_000,
       phase: "watching",
-      phaseRemainingMs: 15_000,
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
       alliesRemaining: 15,
       sheepCount: 20,
+      sheepAtBeach: 0,
       flockLocation: "inside",
       flockDirection: "out",
-      strategy: "pending",
+      strategy: "observing",
       activeSoldierIds: Array.from({ length: 15 }, (_, index) => index),
       selectedSacrificeIds: [],
       bossHp: 1_200,
@@ -53,22 +67,75 @@ describe("fifth-floor cyclops mission", () => {
     });
   });
 
-  it("waits for the player's strategy without sacrificing soldiers", () => {
-    const waiting = advanceFifthFloorMission(
+  it("opens the gate for the flock before asking for a strategy", () => {
+    const opened = advanceFifthFloorMission(
       createFifthFloorMission(),
-      CYCLOPS_WATCH_DURATION_MS * 2,
+      CYCLOPS_WATCH_DURATION_MS,
     );
-    expect(waiting.state).toMatchObject({
+    expect(opened.state).toMatchObject({
+      phase: "gate-open",
+      strategy: "observing",
+      alliesRemaining: 15,
+    });
+    expect(opened.events).toContainEqual({
+      type: "phase-changed",
+      phase: "gate-open",
+    });
+
+    const ready = completeFifthFloorFlockTransit(opened.state);
+    expect(ready.state).toMatchObject({
       phase: "watching",
       strategy: "pending",
-      alliesRemaining: 15,
-      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      flockLocation: "outside",
+      flockDirection: "in",
     });
-    expect(waiting.events).toEqual([]);
+  });
+
+  it("reopens the gate and alternates the flock between outside and inside", () => {
+    const firstOpen = advanceFifthFloorMission(
+      createFifthFloorMission(),
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    const outside = completeFifthFloorFlockTransit(firstOpen).state;
+    expect(outside).toMatchObject({
+      phase: "watching",
+      flockLocation: "outside",
+      flockDirection: "in",
+      sheepAtBeach: 20,
+    });
+
+    const secondOpen = advanceFifthFloorMission(
+      outside,
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(secondOpen).toMatchObject({ phase: "gate-open", strategy: "pending" });
+    const inside = completeFifthFloorFlockTransit(secondOpen).state;
+    expect(inside).toMatchObject({
+      phase: "watching",
+      flockLocation: "inside",
+      flockDirection: "out",
+      sheepAtBeach: 0,
+    });
+  });
+
+  it("keeps the gate cycle running while a strategy command is in progress", () => {
+    let charging = chooseFifthFloorStrategy(prepareTactics(), true).state;
+    charging = toggleFifthFloorSacrifice(charging, 0).state;
+    charging = toggleFifthFloorSacrifice(charging, 1).state;
+    charging = commandFifthFloorSacrificeCharge(charging).state;
+    expect(
+      advanceFifthFloorMission(charging, CYCLOPS_WATCH_DURATION_MS).state,
+    ).toMatchObject({ phase: "gate-open", flockDirection: "in" });
+  });
+
+  it("clamps the number of sheep that crossed into the beach", () => {
+    const state = createFifthFloorMission();
+    expect(updateFifthFloorSheepAtBeach(state, 7.9).state.sheepAtBeach).toBe(7);
+    expect(updateFifthFloorSheepAtBeach(state, 99).state.sheepAtBeach).toBe(20);
   });
 
   it("requires the player to select exactly two living sacrifice soldiers", () => {
-    let state = chooseFifthFloorStrategy(createFifthFloorMission(), true).state;
+    let state = chooseFifthFloorStrategy(prepareTactics(), true).state;
     expect(state.strategy).toBe("stealth-selecting");
 
     state = toggleFifthFloorSacrifice(state, 4).state;
@@ -99,9 +166,41 @@ describe("fifth-floor cyclops mission", () => {
     });
   });
 
+  it("accepts a sacrifice while the gate is open and sleeps only after leaving the gate phase", () => {
+    // Reach a later cycle where the strategy is pending, then reopen the gate.
+    const pendingWatch = prepareTactics();
+    const gateOpen = advanceFifthFloorMission(
+      pendingWatch,
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(gateOpen).toMatchObject({ phase: "gate-open", strategy: "pending" });
+
+    let state = chooseFifthFloorStrategy(gateOpen, true).state;
+    expect(state.strategy).toBe("stealth-selecting");
+    const gateTimer = state.phaseRemainingMs;
+    state = toggleFifthFloorSacrifice(state, 2).state;
+    state = toggleFifthFloorSacrifice(state, 3).state;
+    const charging = commandFifthFloorSacrificeCharge(state).state;
+    expect(charging.strategy).toBe("stealth-charging");
+    // Commanding during gate-open must not reset the gate timer.
+    expect(charging.phaseRemainingMs).toBe(gateTimer);
+
+    const slept = completeFifthFloorSacrifice(charging);
+    expect(slept.state).toMatchObject({
+      phase: "sleeping",
+      strategy: "stealth",
+      phaseRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
+      weakPoint: "primed",
+    });
+    expect(slept.events).toContainEqual({
+      type: "phase-changed",
+      phase: "sleeping",
+    });
+  });
+
   it("commands every soldier to charge immediately when fighting is chosen", () => {
     const fighting = chooseFifthFloorStrategy(
-      createFifthFloorMission(),
+      prepareTactics(),
       false,
     );
     expect(fighting.state.strategy).toBe("fighting");
@@ -112,55 +211,32 @@ describe("fifth-floor cyclops mission", () => {
       CYCLOPS_WATCH_DURATION_MS,
     );
     expect(firstExchange.state.alliesRemaining).toBe(15);
-    expect(firstExchange.state.phase).toBe("watching");
+    expect(firstExchange.state.phase).toBe("gate-open");
 
     const defeatedSquad = loseFifthFloorAllies(firstExchange.state, 15).state;
-    const opened = advanceFifthFloorMission(
-      defeatedSquad,
-      CYCLOPS_WATCH_DURATION_MS,
-    );
-    expect(opened.state.alliesRemaining).toBe(0);
-    expect(opened.state.phase).toBe("gate-open");
+    expect(defeatedSquad.alliesRemaining).toBe(0);
+    // Two soldiers are a full meal: the sated boss shuts the gate and sleeps.
+    expect(defeatedSquad.phase).toBe("sleeping");
   });
 
-  it("opens after sleep and alternates sheep moving outside then inside", () => {
+  it("does not open after sleep unless the primed eye is hit", () => {
     const sleeping = prepareStealthSacrifice();
-    const opened = advanceFifthFloorMission(
+    const woke = advanceFifthFloorMission(
       sleeping,
       CYCLOPS_SLEEP_DURATION_MS,
     ).state;
-    expect(opened.phase).toBe("gate-open");
-    expect(opened.phaseRemainingMs).toBe(CYCLOPS_GATE_OPEN_DURATION_MS);
-
-    const secondWatch = advanceFifthFloorMission(
-      opened,
-      CYCLOPS_GATE_OPEN_DURATION_MS,
-    ).state;
-    expect(secondWatch).toMatchObject({
+    expect(woke).toMatchObject({
       phase: "watching",
+      strategy: "pending",
       flockLocation: "outside",
-      flockDirection: "in",
-    });
-
-    const secondSleep = prepareStealthSacrifice(secondWatch, [2, 3]);
-    const secondOpen = advanceFifthFloorMission(
-      secondSleep,
-      CYCLOPS_SLEEP_DURATION_MS,
-    ).state;
-    const thirdWatch = advanceFifthFloorMission(
-      secondOpen,
-      CYCLOPS_GATE_OPEN_DURATION_MS,
-    ).state;
-    expect(thirdWatch).toMatchObject({
-      flockLocation: "inside",
-      flockDirection: "out",
+      weakPoint: "dormant",
     });
   });
 
   it("is invariant to large or small elapsed-time chunks", () => {
     const elapsed = 105_000;
     const started = chooseFifthFloorStrategy(
-      createFifthFloorMission(),
+      prepareTactics(),
       false,
     ).state;
     const once = advanceFifthFloorMission(started, elapsed).state;
@@ -191,7 +267,7 @@ describe("fifth-floor cyclops mission", () => {
     expect(
       escapeFifthFloorMission(createFifthFloorMission()).state.status,
     ).toBe("active");
-    const reached = reachFifthFloorBeach(createFifthFloorMission()).state;
+    const reached = reachFifthFloorBeach(prepareTactics()).state;
     expect(escapeFifthFloorMission(reached).state.status).toBe("active");
     const gathered = updateFifthFloorAlliesAtBeach(reached, 15).state;
     expect(escapeFifthFloorMission(gathered).state.status).toBe("escaped");
@@ -204,9 +280,18 @@ describe("fifth-floor cyclops mission", () => {
     expect(escapeFifthFloorMission(survivorsGathered).state.status).toBe(
       "escaped",
     );
+
+    const tooFew = loseFifthFloorAllies(reached, 10).state;
+    const fiveGathered = updateFifthFloorAlliesAtBeach(tooFew, 5).state;
+    const failed = escapeFifthFloorMission(fiveGathered);
+    expect(tooFew.alliesRemaining).toBe(FIFTH_FLOOR_MIN_ESCAPE_ALLIES - 1);
+    expect(failed.state).toMatchObject({
+      status: "failed",
+      failureReason: "too-few-survivors",
+    });
   });
 
-  it("opens the gate and blocks attacks when the sleeping eye is pierced", () => {
+  it("blinds the boss forever without touching the gate cycle when the sleeping eye is pierced", () => {
     const sleeping = prepareStealthSacrifice();
     const bodyHit = hitCyclopsWithBasicAttack(sleeping, 20, false);
     expect(bodyHit.state).toMatchObject({
@@ -217,15 +302,43 @@ describe("fifth-floor cyclops mission", () => {
 
     const blinded = hitCyclopsWithBasicAttack(sleeping, 20, true);
     expect(blinded.state).toMatchObject({
-      phase: "gate-open",
+      phase: "watching",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      strategy: "pending",
       weakPoint: "blinded",
       bossHp: 1_140,
     });
+    expect(blinded.events).toContainEqual({ type: "vision-obscured" });
+    expect(blinded.events).toContainEqual({
+      type: "phase-changed",
+      phase: "watching",
+    });
     expect(isCyclopsVisionActive(blinded.state)).toBe(false);
+
+    // The gate schedule keeps running: the next open arrives on its own.
+    const reopened = advanceFifthFloorMission(
+      blinded.state,
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(reopened).toMatchObject({ phase: "gate-open", weakPoint: "blinded" });
+  });
+
+  it("keeps blindness through every later sleep and wake", () => {
+    const sleeping = prepareStealthSacrifice();
+    const blinded = hitCyclopsWithBasicAttack(sleeping, 20, true).state;
+
+    const satedAgain = loseFifthFloorSoldiers(blinded, [5, 6]).state;
+    expect(satedAgain).toMatchObject({ phase: "sleeping", weakPoint: "blinded" });
+
+    const woke = advanceFifthFloorMission(
+      satedAgain,
+      CYCLOPS_SLEEP_DURATION_MS,
+    ).state;
+    expect(woke).toMatchObject({ phase: "watching", weakPoint: "blinded" });
   });
 
   it("allows skills to damage the boss without replacing the eye attack", () => {
-    const hit = hitCyclopsWithSkill(createFifthFloorMission(), 35);
+    const hit = hitCyclopsWithSkill(prepareTactics(), 35);
     expect(hit.state).toMatchObject({ bossHp: 1_165, weakPoint: "dormant" });
     expect(hit.events).toContainEqual({
       type: "boss-damaged",
@@ -234,12 +347,168 @@ describe("fifth-floor cyclops mission", () => {
     });
   });
 
-  it("removes the exact soldiers caught by an attack", () => {
-    const result = loseFifthFloorSoldiers(createFifthFloorMission(), [3, 8]);
-    expect(result.state.alliesRemaining).toBe(13);
-    expect(result.state.activeSoldierIds).not.toContain(3);
-    expect(result.state.activeSoldierIds).not.toContain(8);
-    expect(result.events).toEqual([{ type: "allies-lost", count: 2 }]);
+  it("removes the exact soldiers caught by an attack and sleeps once two are eaten", () => {
+    const first = loseFifthFloorSoldiers(createFifthFloorMission(), [3]);
+    expect(first.state.alliesRemaining).toBe(14);
+    expect(first.state).toMatchObject({ phase: "watching", soldiersEaten: 1 });
+    expect(first.events).toEqual([{ type: "allies-lost", count: 1 }]);
+
+    const sated = loseFifthFloorSoldiers(first.state, [8]);
+    expect(sated.state.alliesRemaining).toBe(13);
+    expect(sated.state.activeSoldierIds).not.toContain(3);
+    expect(sated.state.activeSoldierIds).not.toContain(8);
+    expect(sated.state).toMatchObject({
+      phase: "sleeping",
+      soldiersEaten: 0,
+      weakPoint: "primed",
+    });
+    expect(sated.events).toEqual([
+      { type: "allies-lost", count: 1 },
+      { type: "boss-sated" },
+      { type: "phase-changed", phase: "sleeping" },
+    ]);
+  });
+
+  it("closes the gate and sleeps when two soldiers are eaten with the gate open", () => {
+    const gateOpen = advanceFifthFloorMission(
+      createFifthFloorMission(),
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(gateOpen.phase).toBe("gate-open");
+    const sated = loseFifthFloorSoldiers(gateOpen, [0, 1]);
+    expect(sated.state).toMatchObject({
+      phase: "sleeping",
+      phaseRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
+      weakPoint: "primed",
+    });
+    expect(sated.events).toContainEqual({ type: "boss-sated" });
+  });
+
+  it("freezes the gate timetable while the boss is in combat", () => {
+    const initial = createFifthFloorMission();
+    const held = advanceFifthFloorMission(initial, 4_000, {
+      holdPhaseTimer: true,
+    }).state;
+    expect(held).toMatchObject({
+      phase: "watching",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      phaseTimerHeld: true,
+      remainingMs: FIFTH_FLOOR_MISSION_DURATION_MS - 4_000,
+    });
+
+    const resumed = advanceFifthFloorMission(held, 1_000).state;
+    expect(resumed).toMatchObject({
+      phaseTimerHeld: false,
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS - 1_000,
+    });
+
+    const timedOut = advanceFifthFloorMission(
+      held,
+      FIFTH_FLOOR_MISSION_DURATION_MS,
+      { holdPhaseTimer: true },
+    );
+    expect(timedOut.state).toMatchObject({
+      status: "failed",
+      failureReason: "timeout",
+    });
+  });
+
+  it("resets the chosen sacrifices and sleeps when other soldiers fill the meal", () => {
+    let charging = chooseFifthFloorStrategy(prepareTactics(), true).state;
+    charging = toggleFifthFloorSacrifice(charging, 0).state;
+    charging = toggleFifthFloorSacrifice(charging, 1).state;
+    charging = commandFifthFloorSacrificeCharge(charging).state;
+    expect(charging.strategy).toBe("stealth-charging");
+
+    // One casualty is not a full meal: the designation stands.
+    const oneLost = loseFifthFloorSoldiers(charging, [5]);
+    expect(oneLost.state).toMatchObject({
+      strategy: "stealth-charging",
+      selectedSacrificeIds: [0, 1],
+      soldiersEaten: 1,
+      phase: "watching",
+    });
+
+    const sated = loseFifthFloorSoldiers(oneLost.state, [6]);
+    expect(sated.state).toMatchObject({
+      phase: "sleeping",
+      strategy: "pending",
+      selectedSacrificeIds: [],
+      weakPoint: "primed",
+    });
+    expect(sated.state.activeSoldierIds).toContain(0);
+    expect(sated.state.activeSoldierIds).toContain(1);
+    expect(sated.events).toContainEqual({ type: "sacrifice-reset" });
+    expect(sated.events).toContainEqual({ type: "boss-sated" });
+  });
+
+  it("fails the mission when the boss is downed with the gate shut", () => {
+    const watching = prepareTactics();
+    const downed = hitCyclopsWithSkill(watching, watching.bossHp);
+    expect(downed.state).toMatchObject({
+      status: "failed",
+      failureReason: "gate-sealed",
+      bossHp: 0,
+    });
+    expect(downed.events).toContainEqual({
+      type: "mission-failed",
+      reason: "gate-sealed",
+    });
+
+    // A sleeping boss lies behind a closed gate — an eye-stab kill also seals.
+    const sleeping = { ...prepareStealthSacrifice(), bossHp: 10 };
+    const eyeKill = hitCyclopsWithBasicAttack(sleeping, 20, true);
+    expect(eyeKill.state).toMatchObject({
+      status: "failed",
+      failureReason: "gate-sealed",
+    });
+  });
+
+  it("keeps the gate open when the boss is downed mid-opening", () => {
+    const gateOpen = advanceFifthFloorMission(
+      createFifthFloorMission(),
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(gateOpen.phase).toBe("gate-open");
+    const downed = hitCyclopsWithSkill(gateOpen, gateOpen.bossHp);
+    expect(downed.state).toMatchObject({
+      status: "active",
+      phase: "gate-open",
+      bossHp: 0,
+      weakPoint: "blinded",
+    });
+    expect(downed.events).toContainEqual({ type: "boss-staggered" });
+    expect(
+      downed.events.filter((event) => event.type === "phase-changed"),
+    ).toEqual([]);
+    // The downed boss can never shut the rock again.
+    expect(completeFifthFloorFlockTransit(downed.state).state).toBe(
+      downed.state,
+    );
+  });
+
+  it("revokes a fight or a half-picked sacrifice back to pending with X", () => {
+    const fighting = chooseFifthFloorStrategy(prepareTactics(), false).state;
+    const calledOff = revokeFifthFloorStrategy(fighting);
+    expect(calledOff.state.strategy).toBe("pending");
+    expect(calledOff.events).toEqual([{ type: "strategy-revoked" }]);
+
+    let selecting = chooseFifthFloorStrategy(prepareTactics(), true).state;
+    selecting = toggleFifthFloorSacrifice(selecting, 3).state;
+    const abandoned = revokeFifthFloorStrategy(selecting);
+    expect(abandoned.state).toMatchObject({
+      strategy: "pending",
+      selectedSacrificeIds: [],
+    });
+
+    // A committed charge and a sleeping boss cannot be revoked.
+    let charging = chooseFifthFloorStrategy(prepareTactics(), true).state;
+    charging = toggleFifthFloorSacrifice(charging, 0).state;
+    charging = toggleFifthFloorSacrifice(charging, 1).state;
+    charging = commandFifthFloorSacrificeCharge(charging).state;
+    expect(revokeFifthFloorStrategy(charging).state).toBe(charging);
+    const sleeping = prepareStealthSacrifice();
+    expect(revokeFifthFloorStrategy(sleeping).state).toBe(sleeping);
   });
 
   it("ignores invalid elapsed time", () => {

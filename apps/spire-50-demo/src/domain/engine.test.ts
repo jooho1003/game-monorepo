@@ -141,6 +141,20 @@ describe("deterministic run shell", () => {
     });
   });
 
+  it("records failure when fewer than six soldiers reach the exit", () => {
+    const battle = {
+      ...createInitialSnapshot(),
+      floor: 5,
+      highestFloor: 5,
+      zone: "battle" as const,
+    };
+    const failed = transition(battle, {
+      type: "FAIL_FIFTH_FLOOR",
+      reason: "too-few-survivors",
+    }).snapshot;
+    expect(failed.lastMissionResult).toBe("failure-too-few-survivors");
+  });
+
   it("ignores fifth-floor failure commands outside its mission", () => {
     const initial = createInitialSnapshot();
     expect(

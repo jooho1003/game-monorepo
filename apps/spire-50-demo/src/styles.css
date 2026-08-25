@@ -1859,6 +1859,11 @@ button:focus-visible {
   transform: translateX(-50%);
 }
 
+.cyclops-mission--dock {
+  inset: auto auto 88px 50%;
+}
+
+.cyclops-mission__topbar,
 .cyclops-mission__summary,
 .cyclops-mission__choice {
   overflow: hidden;
@@ -1880,12 +1885,39 @@ button:focus-visible {
   padding: 12px 16px 13px;
 }
 
+.cyclops-mission__topbar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: auto;
+  min-width: 340px;
+  padding: 7px 16px;
+}
+
+.cyclops-mission__topbar .cyclops-mission__clock {
+  grid-auto-flow: column;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.cyclops-mission__toggle-hint {
+  color: var(--mission-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.cyclops-mission__topbar.is-sleeping,
 .cyclops-mission__summary.is-sleeping {
   --mission-accent: #7dd7f3;
   --mission-accent-soft: rgb(83 181 221 / 15%);
   --mission-line: rgb(125 215 243 / 30%);
 }
 
+.cyclops-mission__topbar.is-gate-open,
 .cyclops-mission__summary.is-gate-open {
   --mission-accent: #65e4b8;
   --mission-accent-soft: rgb(69 214 163 / 16%);
@@ -1893,13 +1925,6 @@ button:focus-visible {
   box-shadow:
     0 18px 44px rgb(0 0 0 / 44%),
     0 0 30px rgb(65 222 168 / 12%);
-}
-
-.cyclops-mission__topline {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
-  gap: 12px;
-  align-items: center;
 }
 
 .cyclops-mission__title {

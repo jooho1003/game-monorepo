@@ -13,7 +13,12 @@ export const zoneSchema = z.enum(["rest", "battle", "shop"]);
 export const weaponSchema = z.enum(weaponIds);
 export const wandererRoleSchema = z.enum(["ally", "enemy"]);
 export const missionResultSchema = z
-  .enum(["failure-timeout", "failure-spotted"])
+  .enum([
+    "failure-timeout",
+    "failure-spotted",
+    "failure-too-few-survivors",
+    "failure-gate-sealed",
+  ])
   .nullable();
 
 export type ScreenId = z.infer<typeof screenSchema>;
@@ -68,7 +73,10 @@ export type GameCommand =
   | { type: "RECOVER_RESOURCES"; elapsedMs: number }
   | { type: "GAIN_EXPERIENCE"; amount: number }
   | { type: "COMPLETE_FLOOR" }
-  | { type: "FAIL_FIFTH_FLOOR"; reason: "timeout" | "spotted" }
+  | {
+      type: "FAIL_FIFTH_FLOOR";
+      reason: "timeout" | "spotted" | "too-few-survivors" | "gate-sealed";
+    }
   | { type: "ACK_MISSION_RESULT" }
   | { type: "COLLECT_GOLD"; amount: number }
   | { type: "BUY_HEAL"; price: number; amount: number }
@@ -84,7 +92,10 @@ export type GameEvent =
   | { type: "experience-gained"; amount: number }
   | { type: "level-up"; level: number }
   | { type: "floor-cleared"; floor: number }
-  | { type: "mission-failed"; reason: "timeout" | "spotted" }
+  | {
+      type: "mission-failed";
+      reason: "timeout" | "spotted" | "too-few-survivors" | "gate-sealed";
+    }
   | { type: "gold-collected"; amount: number };
 
 export const commandRecordSchema = z.object({

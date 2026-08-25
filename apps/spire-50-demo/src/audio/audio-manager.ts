@@ -131,18 +131,43 @@ export function combatVoiceLine(
   weaponId: WeaponId,
   index: number,
 ): string {
-  if (action === "attack") {
-    const shouts = ["하!", "얏!", "받아라!"] as const;
-    return shouts[Math.abs(index) % shouts.length]!;
-  }
-  const skillLines: Record<WeaponId, string> = {
-    longsword: "반월참!",
-    dagger: "그림자 돌진!",
-    shield: "수호 충격!",
-    bow: "세 갈래 사격!",
-    staff: "별비여, 내려라!",
+  const weaponOffset: Record<WeaponId, number> = {
+    longsword: 0,
+    dagger: 1,
+    shield: 2,
+    bow: 1,
+    staff: 0,
   };
-  return skillLines[weaponId];
+  const shouts =
+    action === "skill"
+      ? (["이얍!", "하앗!", "합!"] as const)
+      : (["합!", "얍!", "하!"] as const);
+  return shouts[(Math.abs(index) + weaponOffset[weaponId]) % shouts.length]!;
+}
+
+interface CombatVoiceCandidate {
+  name: string;
+  lang: string;
+}
+
+export function selectMaleKoreanVoice<T extends CombatVoiceCandidate>(
+  voices: readonly T[],
+): T | undefined {
+  const koreanVoices = voices.filter((voice) =>
+    voice.lang.toLowerCase().startsWith("ko"),
+  );
+  const maleName =
+    /(male|man|남성|injoon|인준|hyunsu|현수|woosik|우식|david|mark|daniel|guy)/i;
+  const femaleName = /(female|woman|여성|heami|혜미|sunhi|선희|yuna|유나)/i;
+  return (
+    koreanVoices.find(
+      (voice) => maleName.test(voice.name) && !femaleName.test(voice.name),
+    ) ??
+    voices.find(
+      (voice) => maleName.test(voice.name) && !femaleName.test(voice.name),
+    ) ??
+    koreanVoices.find((voice) => !femaleName.test(voice.name))
+  );
 }
 
 export function playCombatVoice(
@@ -159,9 +184,11 @@ export function playCombatVoice(
     combatVoiceLine(action, weaponId, variationCounter),
   );
   utterance.lang = "ko-KR";
-  utterance.rate = action === "skill" ? 1.12 : 1.28;
-  utterance.pitch = 0.82;
-  utterance.volume = action === "skill" ? 0.62 : 0.42;
+  const maleVoice = selectMaleKoreanVoice(window.speechSynthesis.getVoices());
+  if (maleVoice) utterance.voice = maleVoice;
+  utterance.rate = action === "skill" ? 1.18 : 1.34;
+  utterance.pitch = 0.58;
+  utterance.volume = action === "skill" ? 0.72 : 0.52;
   window.speechSynthesis.speak(utterance);
 }
 
