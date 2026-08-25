@@ -24,6 +24,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter=spire-50-demo", "exec", "vite", "--port", "5176"],
       "port": 5176
+    },
+    {
+      "name": "spire-50-demo-alt3",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter=spire-50-demo", "exec", "vite", "--port", "5177"],
+      "port": 5177
     }
   ]
 }
