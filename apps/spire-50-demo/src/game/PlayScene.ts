@@ -5,6 +5,7 @@ import {
   advanceFifthFloorMission,
   chooseFifthFloorStrategy,
   commandFifthFloorSacrificeCharge,
+  completeFifthFloorFlockTransit,
   completeFifthFloorSacrifice,
   createFifthFloorMission,
   escapeFifthFloorMission,
@@ -15,8 +16,10 @@ import {
   isCyclopsVisionActive,
   loseFifthFloorSoldiers,
   reachFifthFloorBeach,
+  revokeFifthFloorStrategy,
   toggleFifthFloorSacrifice,
   updateFifthFloorAlliesAtBeach,
+  updateFifthFloorSheepAtBeach,
   type FifthFloorFailureReason,
   type FifthFloorMissionEvent,
   type FifthFloorMissionState,
@@ -54,16 +57,21 @@ import {
   CYCLOPS_DISPLAY_SIZE,
   CYCLOPS_FACING_ANGLE,
   CYCLOPS_POSITION,
+  CYCLOPS_SLEEP_POSITION,
   CYCLOPS_VIEW_DISTANCE,
   CYCLOPS_VIEW_HALF_ANGLE,
   FIFTH_FLOOR_NUMBER,
   SHEEP_INSIDE_SPAWNS,
   SHEEP_OUTSIDE_SPAWNS,
+  cyclopsGuardAttackProfile,
   doCaveBodiesOverlap,
   isPointInCaveExit,
+  isPointInCyclopsGuardRange,
   isPointInCyclopsStrike,
   isPointInCyclopsVision,
+  missionShoveTarget,
   movementAvoidanceCandidates,
+  sheepTransitTarget,
   sheepYieldTarget,
   type CavePoint,
 } from "./fifth-floor-layout.js";
@@ -147,9 +155,22 @@ interface CyclopsStrike {
   x: number;
   y: number;
   resolvesAt: number;
+  radius: number;
+  cooldownMs: number;
 }
 
-type CyclopsAction = "idle" | "walk" | "attack" | "rock" | "sleep";
+type CyclopsAction =
+  | "idle"
+  | "walk"
+  | "attack"
+  | "rock"
+  | "sleep"
+  | "roar"
+  | "sweep-windup"
+  | "sweep-impact"
+  | "gate-open"
+  | "gate-close"
+  | "blind-guard";
 
 type MinimapMarkerKind = "player" | "ally" | "enemy" | "npc";
 
@@ -186,13 +207,21 @@ const CYCLOPS_PATROL_SPEED = 104;
 const CYCLOPS_CHASE_SPEED = 168;
 const CYCLOPS_FIGHT_SPEED = 205;
 const CYCLOPS_CONTACT_AGGRO_DISTANCE = 176;
+const CYCLOPS_DEAGGRO_DISTANCE = 520;
 const CYCLOPS_BODY_RADIUS = 94;
 const CYCLOPS_LABEL_OFFSET = 250;
 const MISSION_SOLDIER_RADIUS = 25;
 const MISSION_SHEEP_RADIUS = 22;
 const CYCLOPS_STRIKE_RADIUS = 82;
-const CYCLOPS_STRIKE_WARNING_MS = 900;
-const CYCLOPS_STRIKE_COOLDOWN_MS = 1_650;
+const CYCLOPS_STRIKE_WARNING_MS = 850;
+const CYCLOPS_STRIKE_COOLDOWN_MS = 1_700;
+const CYCLOPS_MELEE_GUARD_RANGE = 300;
+const MISSION_SHEEP_SPEED = 138;
+const MISSION_SHEEP_YIELD_SPEED = 104;
+const MISSION_SHEEP_FRAME_DURATION = 250;
+const MISSION_SHOVE_RANGE = 118;
+const MISSION_SHOVE_DISTANCE = 112;
+const MISSION_SHOVE_COOLDOWN_MS = 360;
 const GAME_FONT = '"Pretendard UI", "Noto Sans KR", sans-serif';
 
 const EIGHT_DIRECTION_SHEET_ORDER: readonly PlayerDirection[] = [
@@ -288,6 +317,7 @@ export class PlayScene extends Phaser.Scene {
   private moveKeys!: MoveKeys;
   private skillKey!: Phaser.Input.Keyboard.Key;
   private pickupKey!: Phaser.Input.Keyboard.Key;
+  private shoveKey!: Phaser.Input.Keyboard.Key;
   private enemies: EnemyActor[] = [];
   private drops: DropActor[] = [];
   private portals: PortalActor[] = [];
@@ -334,6 +364,8 @@ export class PlayScene extends Phaser.Scene {
   private cyclopsAction: CyclopsAction = "idle";
   private caveGate?: Phaser.GameObjects.Container;
   private caveGateCollider?: Phaser.Geom.Rectangle;
+  private caveGateStateLabel?: Phaser.GameObjects.Text;
+  private caveGateWalkable = false;
   private missionAllies: MissionSoldier[] = [];
   private missionSheep: MissionSheep[] = [];
   private stealthSacrificeInProgress = false;
@@ -342,6 +374,8 @@ export class PlayScene extends Phaser.Scene {
   private nextFootstepAt = 0;
   private nextMissionAnimalSoundAt = 0;
   private nextImpactSoundAt = 0;
+  private nextMissionShoveAt = 0;
+  private caveCollisionGuide?: Phaser.GameObjects.Graphics;
 
   private get cyclopsBoss(): Phaser.GameObjects.Sprite | undefined {
     return this.cyclopsActor?.node;
@@ -393,6 +427,14 @@ export class PlayScene extends Phaser.Scene {
     );
     for (const direction of PLAYER_DIRECTIONS) {
       for (const frame of [0, 1] as const) {
+        this.load.image(
+          `cyclops-attack-v3-${direction}-${frame}`,
+          `/assets/game/world/boss/cyclops/attack-v3/${direction}-${frame}.png`,
+        );
+        this.load.image(
+          `cyclops-gate-v3-${direction}-${frame}`,
+          `/assets/game/world/boss/cyclops/gate-v3/${direction}-${frame}.png`,
+        );
         this.load.image(
           `soldier-attack-${direction}-${frame}`,
           `/assets/game/world/actors/soldier/attack/${direction}-${frame}.png`,
@@ -464,6 +506,9 @@ export class PlayScene extends Phaser.Scene {
     this.pickupKey = this.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.Z,
     );
+    this.shoveKey = this.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.G,
+    );
     this.input.on("pointerdown", this.onPointerDown, this);
     this.input.setDefaultCursor("none");
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanUp, this);
@@ -519,6 +564,12 @@ export class PlayScene extends Phaser.Scene {
     }
     for (const direction of PLAYER_DIRECTIONS) {
       for (const frame of [0, 1] as const) {
+        this.textures
+          .get(`cyclops-attack-v3-${direction}-${frame}`)
+          .setFilter(Phaser.Textures.FilterMode.NEAREST);
+        this.textures
+          .get(`cyclops-gate-v3-${direction}-${frame}`)
+          .setFilter(Phaser.Textures.FilterMode.NEAREST);
         this.textures
           .get(`soldier-attack-${direction}-${frame}`)
           .setFilter(Phaser.Textures.FilterMode.NEAREST);
@@ -607,6 +658,9 @@ export class PlayScene extends Phaser.Scene {
     this.updateMinimapMarkers();
 
     if (this.zone === "battle" && snapshot.floor === FIFTH_FLOOR_NUMBER) {
+      if (Phaser.Input.Keyboard.JustDown(this.shoveKey)) {
+        this.handleMissionShove(time);
+      }
       this.updateFifthFloorMission(time, delta);
     } else if (this.zone === "battle") {
       this.updateEnemies(time, delta);
@@ -658,6 +712,8 @@ export class PlayScene extends Phaser.Scene {
     this.cyclopsAction = "idle";
     this.caveGate = undefined;
     this.caveGateCollider = undefined;
+    this.caveGateStateLabel = undefined;
+    this.caveGateWalkable = false;
     this.missionAllies = [];
     this.missionSheep = [];
     this.stealthSacrificeInProgress = false;
@@ -666,6 +722,8 @@ export class PlayScene extends Phaser.Scene {
     this.nextFootstepAt = 0;
     this.nextMissionAnimalSoundAt = 0;
     this.nextImpactSoundAt = 0;
+    this.nextMissionShoveAt = 0;
+    this.caveCollisionGuide = undefined;
     this.transitioning = false;
     this.returnPortalCreated = false;
     this.cameras.main.setBackgroundColor(zoneBackground(this.zone));
@@ -992,6 +1050,49 @@ export class PlayScene extends Phaser.Scene {
       this.add.circle(x, y, 92, 0xff7a31, 0.05).setDepth(0);
       this.add.circle(x, y, 14, 0xff9a42, 0.34).setDepth(1);
       this.add.circle(x, y - 3, 6, 0xffe09a, 0.9).setDepth(2);
+    }
+    this.caveCollisionGuide = this.add
+      .graphics()
+      .setDepth(10.5)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.updateCaveCollisionGuide();
+  }
+
+  private updateCaveCollisionGuide(): void {
+    if (!this.caveCollisionGuide) return;
+    this.caveCollisionGuide.clear();
+    this.caveCollisionGuide.fillStyle(0xff0000, 0.1);
+    this.caveCollisionGuide.lineStyle(8, 0xff1010, 1);
+    for (const collider of CAVE_STRUCTURE_COLLIDERS) {
+      this.caveCollisionGuide.fillRect(
+        collider.x,
+        collider.y,
+        collider.width,
+        collider.height,
+      );
+      this.caveCollisionGuide.strokeRect(
+        collider.x,
+        collider.y,
+        collider.width,
+        collider.height,
+      );
+    }
+    if (
+      this.caveGateCollider &&
+      this.collisionRects.includes(this.caveGateCollider)
+    ) {
+      this.caveCollisionGuide.fillRect(
+        this.caveGateCollider.x,
+        this.caveGateCollider.y,
+        this.caveGateCollider.width,
+        this.caveGateCollider.height,
+      );
+      this.caveCollisionGuide.strokeRect(
+        this.caveGateCollider.x,
+        this.caveGateCollider.y,
+        this.caveGateCollider.width,
+        this.caveGateCollider.height,
+      );
     }
   }
 
@@ -1750,8 +1851,8 @@ export class PlayScene extends Phaser.Scene {
       .sprite(
         CYCLOPS_POSITION.x,
         CYCLOPS_POSITION.y,
-        "cyclops-actions-pixel",
-        "idle",
+        "cyclops-walk-8d",
+        "west-0",
       )
       .setDisplaySize(CYCLOPS_DISPLAY_SIZE, CYCLOPS_DISPLAY_SIZE)
       .setOrigin(0.5, 0.72)
@@ -1839,17 +1940,18 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(6)
       .setResolution(2);
     this.cyclopsActor = { node: cyclopsNode, name: cyclopsName };
-    this.add
+    this.caveGateStateLabel = this.add
       .text(
         CAVE_GATE_POSITION.x - 34,
         CAVE_GATE_POSITION.y + 230,
-        "바위문 · 열린 동안 우측 출구 통과",
+        "닫힘 · 통과 불가",
         {
-          color: "#d3b083",
+          color: "#ff9e80",
           fontFamily: GAME_FONT,
-          fontSize: "14px",
-          backgroundColor: "#100a07c9",
-          padding: { x: 10, y: 5 },
+          fontSize: "18px",
+          fontStyle: "bold",
+          backgroundColor: "#2a0d08e8",
+          padding: { x: 14, y: 8 },
         },
       )
       .setOrigin(0.5)
@@ -1858,7 +1960,7 @@ export class PlayScene extends Phaser.Scene {
     this.addInstruction(
       CAVE_PLAYER_SPAWN.x + 190,
       CAVE_PLAYER_SPAWN.y + 104,
-      "병사는 대열을 유지합니다 · 잠든 눈을 기본 공격하면 8초 동안 공격이 멈추고 바위문이 열립니다",
+      "G: 병사·양 밀치기 / 잠든 눈 타격 · 빨간선: 이미지에서 인식한 충돌 구조물",
     );
     this.createPortal(
       BEACH_REST_GATE_POSITION.x,
@@ -1893,19 +1995,58 @@ export class PlayScene extends Phaser.Scene {
                 this.fifthFloorMission,
                 request.soldierId,
               )
-            : commandFifthFloorSacrificeCharge(this.fifthFloorMission);
+            : request.type === "revoke-strategy"
+              ? revokeFifthFloorStrategy(this.fifthFloorMission)
+              : commandFifthFloorSacrificeCharge(this.fifthFloorMission);
       this.fifthFloorMission = result.state;
       this.handleFifthFloorEvents(result.events);
       this.publishFifthFloorMission(true);
     }
 
     if (this.fifthFloorMission.status !== "active") return;
-    const advanced = advanceFifthFloorMission(this.fifthFloorMission, delta);
+    const advanced = advanceFifthFloorMission(this.fifthFloorMission, delta, {
+      holdPhaseTimer: this.isCyclopsAttacking(),
+    });
     this.fifthFloorMission = advanced.state;
     this.handleFifthFloorEvents(advanced.events);
     if (this.fifthFloorMission.status !== "active") return;
 
     this.updateMissionWalkers(time, delta);
+    const sheepAtBeach = this.missionSheep.filter(
+      (sheep) => sheep.node.active && sheep.node.x >= BEACH_REGION.x,
+    ).length;
+    const sheepProgress = updateFifthFloorSheepAtBeach(
+      this.fifthFloorMission,
+      sheepAtBeach,
+    );
+    this.fifthFloorMission = sheepProgress.state;
+    // The gate may only close after every sheep has fully cleared the doorway:
+    // outbound means past the beach line, inbound means back past the gate slab.
+    const flockTransitComplete =
+      this.fifthFloorMission.flockDirection === "out"
+        ? this.missionSheep.every(
+            (sheep) =>
+              !sheep.node.active || sheep.node.x >= BEACH_REGION.x,
+          )
+        : this.missionSheep.every(
+            (sheep) =>
+              !sheep.node.active ||
+              sheep.node.x <= CAVE_GATE_COLLIDER.x - 40,
+          );
+    if (
+      this.fifthFloorMission.phase === "gate-open" &&
+      this.fifthFloorMission.bossHp > 0 &&
+      this.caveGateWalkable &&
+      flockTransitComplete &&
+      // Mid-combat the boss never breaks off to shut the rock.
+      !this.isCyclopsEngagedInCombat()
+    ) {
+      const flockArrived = completeFifthFloorFlockTransit(
+        this.fifthFloorMission,
+      );
+      this.fifthFloorMission = flockArrived.state;
+      this.handleFifthFloorEvents(flockArrived.events);
+    }
     this.updateCyclopsActor(time, delta);
     this.updateCyclopsStrike(time);
     this.updateCyclopsVision();
@@ -1913,17 +2054,24 @@ export class PlayScene extends Phaser.Scene {
       this.nextMissionAnimalSoundAt = time + 7_600;
       playSfx("sheepBaa", { volume: 0.16 });
     }
-    if (
-      isCyclopsAwake(this.fifthFloorMission) &&
-      this.cyclopsBoss &&
-      Phaser.Math.Distance.Between(
+    if (isCyclopsAwake(this.fifthFloorMission) && this.cyclopsBoss) {
+      const playerDistance = Phaser.Math.Distance.Between(
         this.cyclopsBoss.x,
         this.cyclopsBoss.y,
         this.player.x,
         this.player.y,
-      ) <= CYCLOPS_CONTACT_AGGRO_DISTANCE
-    ) {
-      this.triggerCyclopsAggro();
+      );
+      if (playerDistance <= CYCLOPS_CONTACT_AGGRO_DISTANCE) {
+        this.triggerCyclopsAggro();
+      } else if (
+        this.cyclopsAggroActive &&
+        !this.cyclopsStrike &&
+        playerDistance > CYCLOPS_DEAGGRO_DISTANCE
+      ) {
+        // The chase must be able to end, or the frozen gate timetable would
+        // never resume and the run would soft-lock.
+        this.cyclopsAggroActive = false;
+      }
     }
     if (
       this.fifthFloorMission.phase === "gate-open" &&
@@ -1942,6 +2090,7 @@ export class PlayScene extends Phaser.Scene {
       alliesAtBeach,
     );
     this.fifthFloorMission = gathered.state;
+    this.updateCaveCollisionGuide();
 
     this.publishFifthFloorMission();
   }
@@ -1949,7 +2098,10 @@ export class PlayScene extends Phaser.Scene {
   private updateCyclopsActor(time: number, delta: number): void {
     if (!this.cyclopsBoss || !this.fifthFloorMission) return;
     if (this.cyclopsStrike) {
-      this.cyclopsAction = "attack";
+      this.cyclopsAction =
+        this.cyclopsStrike.resolvesAt - time <= 240
+          ? "sweep-impact"
+          : "sweep-windup";
       this.renderCyclopsAction(time);
       return;
     }
@@ -1957,15 +2109,18 @@ export class PlayScene extends Phaser.Scene {
       this.renderCyclopsAction(time);
       return;
     }
-    if (!isCyclopsAwake(this.fifthFloorMission)) {
-      if (
-        this.fifthFloorMission.phase === "sleeping" &&
-        this.cyclopsAction !== "attack"
-      ) {
-        this.cyclopsAction = "sleep";
-      } else if (this.fifthFloorMission.phase === "gate-open") {
-        this.cyclopsAction = "rock";
-      }
+    if (this.fifthFloorMission.phase === "sleeping") {
+      this.cyclopsAction = "sleep";
+      this.renderCyclopsAction(time);
+      return;
+    }
+    if (this.fifthFloorMission.phase === "gate-open") {
+      this.cyclopsAction =
+        this.fifthFloorMission.bossHp <= 0
+          ? "sleep"
+          : this.fifthFloorMission.weakPoint === "blinded"
+            ? "blind-guard"
+            : "idle";
       this.renderCyclopsAction(time);
       return;
     }
@@ -2040,15 +2195,34 @@ export class PlayScene extends Phaser.Scene {
     const duration =
       this.cyclopsAction === "walk" ? CYCLOPS_WALK_FRAME_DURATION : 330;
     const frame = Math.floor(time / duration) % 2;
-    if (this.cyclopsAction === "walk") {
+    if (this.cyclopsAction === "walk" || this.cyclopsAction === "idle") {
       this.cyclopsBoss.setTexture(
         "cyclops-walk-8d",
-        `${this.cyclopsDirection}-${frame}`,
+        `${this.cyclopsDirection}-${
+          this.cyclopsAction === "idle" ? 0 : frame
+        }`,
       );
+    } else if (
+      this.cyclopsAction === "gate-open" ||
+      this.cyclopsAction === "gate-close" ||
+      this.cyclopsAction === "rock"
+    ) {
+      this.cyclopsBoss.setTexture(
+        `cyclops-gate-v3-${this.cyclopsDirection}-${
+          this.cyclopsAction === "gate-close" ? 0 : 1
+        }`,
+      );
+    } else if (this.cyclopsAction === "sleep") {
+      this.cyclopsBoss.setTexture("cyclops-actions-pixel", "sleep");
     } else {
-      const actionFrame =
-        this.cyclopsAction === "rock" ? "attack" : this.cyclopsAction;
-      this.cyclopsBoss.setTexture("cyclops-actions-pixel", actionFrame);
+      const attackFrame =
+        this.cyclopsAction === "sweep-windup" ||
+        this.cyclopsAction === "blind-guard"
+          ? 0
+          : 1;
+      this.cyclopsBoss.setTexture(
+        `cyclops-attack-v3-${this.cyclopsDirection}-${attackFrame}`,
+      );
     }
     this.cyclopsBoss
       .setDisplaySize(CYCLOPS_DISPLAY_SIZE, CYCLOPS_DISPLAY_SIZE)
@@ -2123,6 +2297,14 @@ export class PlayScene extends Phaser.Scene {
     for (const soldier of this.missionAllies) {
       const previousX = soldier.node.x;
       const previousY = soldier.node.y;
+      if (time < (Number(soldier.node.getData("shoveRecoverAt")) || 0)) {
+        soldier.node.setTexture("soldier-walk-8d", `${soldier.direction}-0`);
+        soldier.barBack.setPosition(soldier.node.x, soldier.node.y + 30);
+        soldier.barFill
+          .setPosition(soldier.node.x - 20, soldier.node.y + 30)
+          .setDisplaySize(40 * (soldier.hp / 100), 3);
+        continue;
+      }
       const formation = this.missionFormationPoint(soldier.index);
       let targetX = formation.x;
       let targetY = formation.y;
@@ -2190,9 +2372,70 @@ export class PlayScene extends Phaser.Scene {
 
     this.tryBeginCyclopsSacrifice();
 
+    const flockTransit =
+      this.fifthFloorMission?.phase === "gate-open" &&
+      this.fifthFloorMission.bossHp > 0 &&
+      this.caveGateWalkable;
     for (const sheep of this.missionSheep) {
-      let targetX = sheep.target.x;
-      let targetY = sheep.target.y;
+      if (time < (Number(sheep.node.getData("shoveRecoverAt")) || 0)) {
+        sheep.node.setTexture("sheep-walk-8d", `${sheep.direction}-0`);
+        continue;
+      }
+      // Anti-deadlock watchdog: the gate stays open until every sheep clears
+      // the doorway, so one sheep wedged against an actor forever would hold
+      // the whole mission hostage. Once the gate timer is overdue, a sheep
+      // that has made no progress for five seconds is nudged straight to its
+      // side of the door.
+      if (
+        flockTransit &&
+        (this.fifthFloorMission?.phaseRemainingMs ?? 1) <= 0
+      ) {
+        const destination =
+          this.fifthFloorMission?.flockDirection === "in"
+            ? sheep.inside
+            : sheep.outside;
+        const remaining = Phaser.Math.Distance.Between(
+          sheep.node.x,
+          sheep.node.y,
+          destination.x,
+          destination.y,
+        );
+        // Progress is measured as distance-to-destination, not raw movement:
+        // a wedged sheep that wiggles in place forever would otherwise keep
+        // resetting the stall timer and hold the gate open for the whole run.
+        const bestRemaining = Number(
+          sheep.node.getData("transitWatchRemaining"),
+        );
+        const since = Number(sheep.node.getData("transitWatchSince")) || 0;
+        const progressed =
+          !Number.isFinite(bestRemaining) || remaining < bestRemaining - 6;
+        if (progressed || remaining <= 60) {
+          sheep.node.setData(
+            "transitWatchRemaining",
+            Math.min(remaining, Number.isFinite(bestRemaining) ? bestRemaining : remaining),
+          );
+          sheep.node.setData("transitWatchSince", time);
+        } else if (time - since > 5_000) {
+          sheep.node.setPosition(destination.x, destination.y);
+          sheep.node.setData("transitWatchRemaining", 0);
+          sheep.node.setData("transitWatchSince", time);
+          continue;
+        }
+      } else {
+        sheep.node.setData("transitWatchRemaining", Number.NaN);
+      }
+      const transitTarget = flockTransit
+        ? sheepTransitTarget(
+            sheep.node,
+            this.fifthFloorMission?.flockDirection === "in"
+              ? sheep.inside
+              : sheep.outside,
+            sheep.index,
+            this.fifthFloorMission?.flockDirection ?? "out",
+          )
+        : sheep.target;
+      let targetX = transitTarget.x;
+      let targetY = transitTarget.y;
       let nearestTraffic: CavePoint | undefined;
       let nearestTrafficDistance = 104;
       for (const actor of movingTraffic) {
@@ -2220,7 +2463,7 @@ export class PlayScene extends Phaser.Scene {
         sheep.node.y - bossPoint.y,
       );
       const bossDistance = away.length();
-      if (bossDistance < 610 && bossDistance > 0) {
+      if (!flockTransit && bossDistance < 610 && bossDistance > 0) {
         away.normalize();
         targetX += away.x * 300;
         targetY += away.y * 300;
@@ -2229,13 +2472,15 @@ export class PlayScene extends Phaser.Scene {
         sheep.node,
         targetX,
         targetY,
-        nearestTraffic ? 154 : 218,
+        (nearestTraffic ? MISSION_SHEEP_YIELD_SPEED : MISSION_SHEEP_SPEED) *
+          (0.88 + (sheep.index % 5) * 0.06),
         sheep.direction,
         time,
         delta,
         MISSION_SHEEP_RADIUS,
         sheep.index % 2 === 0,
-        false,
+        flockTransit,
+        flockTransit,
       );
     }
   }
@@ -2256,6 +2501,160 @@ export class PlayScene extends Phaser.Scene {
     };
   }
 
+  private handleMissionShove(time: number): void {
+    if (
+      !this.fifthFloorMission ||
+      this.fifthFloorMission.status !== "active" ||
+      time < this.nextMissionShoveAt
+    ) {
+      return;
+    }
+    this.nextMissionShoveAt = time + MISSION_SHOVE_COOLDOWN_MS;
+    const facingAngle = playerDirectionAngle(this.playerDirection);
+
+    if (
+      this.cyclopsBoss &&
+      this.fifthFloorMission.phase === "sleeping" &&
+      this.fifthFloorMission.weakPoint === "primed"
+    ) {
+      const bossAngle = Phaser.Math.Angle.Between(
+        this.player.x,
+        this.player.y,
+        this.cyclopsBoss.x,
+        this.cyclopsBoss.y - 92,
+      );
+      const bossDistance = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        this.cyclopsBoss.x,
+        this.cyclopsBoss.y,
+      );
+      if (
+        bossDistance <= CYCLOPS_BODY_RADIUS + 170 &&
+        Math.abs(Phaser.Math.Angle.Wrap(bossAngle - facingAngle)) <= 0.95
+      ) {
+        this.playerDirection = directionFromAngle(bossAngle);
+        this.weaponAttackDirection = this.playerDirection;
+        this.weaponAttackStartedAt = time;
+        this.playThrustEffect(bossAngle, 126, 0xffe2a6, 11);
+        playSfx("weaponHit", { volume: 0.62, rate: 0.9 });
+        const hit = hitCyclopsWithBasicAttack(
+          this.fifthFloorMission,
+          20,
+          true,
+        );
+        this.fifthFloorMission = hit.state;
+        this.handleFifthFloorEvents(hit.events);
+        return;
+      }
+    }
+
+    const candidates = [
+      ...this.missionAllies.map((soldier) => ({
+        node: soldier.node,
+        radius: MISSION_SOLDIER_RADIUS,
+      })),
+      ...this.missionSheep.map((sheep) => ({
+        node: sheep.node,
+        radius: MISSION_SHEEP_RADIUS,
+      })),
+    ];
+    let target: (typeof candidates)[number] | undefined;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      if (!candidate.node.active) continue;
+      const distance = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        candidate.node.x,
+        candidate.node.y,
+      );
+      if (distance > MISSION_SHOVE_RANGE || distance >= nearest) continue;
+      const angle = Phaser.Math.Angle.Between(
+        this.player.x,
+        this.player.y,
+        candidate.node.x,
+        candidate.node.y,
+      );
+      if (Math.abs(Phaser.Math.Angle.Wrap(angle - facingAngle)) > 0.9) continue;
+      target = candidate;
+      nearest = distance;
+    }
+    if (!target) return;
+
+    const destination = missionShoveTarget(
+      this.player,
+      target.node,
+      facingAngle,
+      MISSION_SHOVE_DISTANCE,
+    );
+    const startX = target.node.x;
+    const startY = target.node.y;
+    let resolved = { x: startX, y: startY };
+    for (let step = 8; step >= 1; step -= 1) {
+      const progress = step / 8;
+      const x = Phaser.Math.Linear(startX, destination.x, progress);
+      const y = Phaser.Math.Linear(startY, destination.y, progress);
+      if (!this.canPushedMissionActorOccupy(target.node, x, y, target.radius)) {
+        continue;
+      }
+      resolved = { x, y };
+      break;
+    }
+    if (resolved.x === startX && resolved.y === startY) return;
+    target.node.setPosition(resolved.x, resolved.y);
+    target.node.setData("shoveRecoverAt", time + 460);
+    target.node.setTintFill(0xffffff);
+    this.time.delayedCall(90, () => target?.node.clearTint());
+    const ring = this.add
+      .ellipse(resolved.x, resolved.y + 12, 66, 24, 0xffd27a, 0.12)
+      .setStrokeStyle(3, 0xffd27a, 0.85)
+      .setDepth(6.8);
+    this.tweens.add({
+      targets: ring,
+      scale: 1.7,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => ring.destroy(),
+    });
+    playSfx("weaponSwing", { volume: 0.26, rate: 0.78 });
+  }
+
+  private canPushedMissionActorOccupy(
+    node: Phaser.GameObjects.Sprite,
+    x: number,
+    y: number,
+    radius: number,
+  ): boolean {
+    const feet = new Phaser.Geom.Rectangle(
+      x - radius * 0.72,
+      y - radius * 0.22,
+      radius * 1.44,
+      radius * 0.7,
+    );
+    if (!Phaser.Geom.Rectangle.ContainsRect(this.movementBounds, feet)) {
+      return false;
+    }
+    if (this.intersectsWorldCollision(feet)) return false;
+    if (
+      this.cyclopsBoss?.active &&
+      doCaveBodiesOverlap(
+        { x, y },
+        radius,
+        this.cyclopsBoss,
+        CYCLOPS_BODY_RADIUS,
+      )
+    ) {
+      return false;
+    }
+    return !this.missionCollisionBodies().some(
+      (body) =>
+        body.node !== node &&
+        body.node.active &&
+        doCaveBodiesOverlap({ x, y }, radius, body.node, body.radius),
+    );
+  }
+
   private moveMissionWalker(
     node: Phaser.GameObjects.Sprite,
     targetX: number,
@@ -2267,6 +2666,7 @@ export class PlayScene extends Phaser.Scene {
     radius: number,
     preferClockwise: boolean,
     hasCrowdPriority: boolean,
+    ignoreMajorActors = false,
   ): PlayerDirection {
     const vector = new Phaser.Math.Vector2(targetX - node.x, targetY - node.y);
     let direction = currentDirection;
@@ -2306,6 +2706,7 @@ export class PlayScene extends Phaser.Scene {
             nextY,
             radius,
             hasCrowdPriority,
+            ignoreMajorActors,
           )
         ) {
           continue;
@@ -2315,18 +2716,57 @@ export class PlayScene extends Phaser.Scene {
         direction = directionFromAxes(candidate.x, candidate.y, direction);
         break;
       }
+      // Cornered against a wall: slide along one axis instead of freezing.
+      if (!moved) {
+        for (const slide of [
+          { x: Math.sign(vector.x), y: 0 },
+          { x: 0, y: Math.sign(vector.y) },
+        ]) {
+          if (slide.x === 0 && slide.y === 0) continue;
+          const slideX = Phaser.Math.Clamp(
+            node.x + slide.x * distance,
+            CAVE_MOVEMENT_BOUNDS.x + 24,
+            CAVE_MOVEMENT_BOUNDS.x + CAVE_MOVEMENT_BOUNDS.width - 24,
+          );
+          const slideY = Phaser.Math.Clamp(
+            node.y + slide.y * distance,
+            CAVE_MOVEMENT_BOUNDS.y + 24,
+            CAVE_MOVEMENT_BOUNDS.y + CAVE_MOVEMENT_BOUNDS.height - 24,
+          );
+          if (slideX === node.x && slideY === node.y) continue;
+          if (
+            !this.canMissionWalkerOccupy(
+              node,
+              slideX,
+              slideY,
+              radius,
+              hasCrowdPriority,
+              ignoreMajorActors,
+            )
+          ) {
+            continue;
+          }
+          node.setPosition(slideX, slideY);
+          moved = true;
+          direction = directionFromAxes(slide.x, slide.y, direction);
+          break;
+        }
+      }
     }
+    const isSheep = node.getData("missionKind") !== "soldier";
+    const walkPhase = Number(node.getData("walkPhase")) || 0;
     const frame = moved
       ? Math.floor(
-          (time + (Number(node.getData("walkPhase")) || 0)) /
-            MISSION_WALK_FRAME_DURATION,
+          (time + walkPhase) /
+            (isSheep ? MISSION_SHEEP_FRAME_DURATION : MISSION_WALK_FRAME_DURATION),
         ) % 2
       : 0;
-    const textureKey =
-      node.getData("missionKind") === "soldier"
-        ? "soldier-walk-8d"
-        : "sheep-walk-8d";
+    const textureKey = isSheep ? "sheep-walk-8d" : "soldier-walk-8d";
     node.setTexture(textureKey, `${direction}-${frame}`).setFlipX(false);
+    // A grazing animal never glides — a light body sway sells the trot.
+    if (isSheep) {
+      node.setAngle(moved ? Math.sin((time + walkPhase) / 150) * 3.2 : 0);
+    }
     return direction;
   }
 
@@ -2433,11 +2873,24 @@ export class PlayScene extends Phaser.Scene {
       });
     });
 
+    const sacrificeIds = selected.map((soldier) => soldier.index);
     this.time.delayedCall(1_450, () => {
       if (!this.fifthFloorMission) return;
       const completed = completeFifthFloorSacrifice(this.fifthFloorMission);
-      this.fifthFloorMission = completed.state;
       this.stealthSacrificeInProgress = false;
+      if (completed.state === this.fifthFloorMission) {
+        // The meal script was interrupted (the boss dozed off after eating
+        // other soldiers mid-grab). The two grabbed soldiers are gone either
+        // way, so book their loss through the regular casualty path.
+        const fallback = loseFifthFloorSoldiers(
+          this.fifthFloorMission,
+          sacrificeIds,
+        );
+        this.fifthFloorMission = fallback.state;
+        this.handleFifthFloorEvents(fallback.events);
+        return;
+      }
+      this.fifthFloorMission = completed.state;
       this.handleFifthFloorEvents(completed.events);
     });
   }
@@ -2448,6 +2901,7 @@ export class PlayScene extends Phaser.Scene {
     y: number,
     radius: number,
     hasCrowdPriority: boolean,
+    ignoreMajorActors: boolean,
   ): boolean {
     const feet = new Phaser.Geom.Rectangle(
       x - radius * 0.72,
@@ -2456,6 +2910,9 @@ export class PlayScene extends Phaser.Scene {
       radius * 0.7,
     );
     if (this.intersectsWorldCollision(feet)) return false;
+    // The Cyclops deliberately clears a lane while operating the door. Sheep
+    // in that transit lane must not deadlock against the player or the boss.
+    if (ignoreMajorActors) return true;
     if (doCaveBodiesOverlap({ x, y }, radius, this.player, 17)) {
       return false;
     }
@@ -2505,6 +2962,27 @@ export class PlayScene extends Phaser.Scene {
         this.showBossCallout("선택한 병사 2명 희생 · 외눈박이 수면", "#ffbd78");
         continue;
       }
+      if (event.type === "sacrifice-reset") {
+        this.showBossCallout(
+          "다른 병사가 잡아먹혀 희생 지명이 해제되었습니다",
+          "#ffbd78",
+        );
+        continue;
+      }
+      if (event.type === "strategy-revoked") {
+        this.showBossCallout("명령 철회 · 병사들이 물러납니다", "#b7f1e6");
+        playSfx("uiConfirm", { volume: 0.42, rate: 0.78 });
+        continue;
+      }
+      if (event.type === "flock-moved") {
+        this.showBossCallout(
+          event.location === "outside"
+            ? "양 20마리 외출 완료 · 잠시 후 다시 들여보냅니다"
+            : "양 20마리 귀환 완료 · 잠시 후 다시 내보냅니다",
+          "#ffd27a",
+        );
+        continue;
+      }
       if (event.type === "sacrifice-charge-commanded") {
         this.showBossCallout(
           `병사 ${event.soldierIds.map((id) => id + 1).join("·")} 돌진`,
@@ -2522,12 +3000,24 @@ export class PlayScene extends Phaser.Scene {
         if (event.phase === "gate-open") {
           this.cancelCyclopsStrike();
           this.openCaveGate();
-        } else if (
-          event.phase === "watching" &&
-          this.caveGate &&
-          this.caveGate.x > CAVE_GATE_POSITION.x + 40
-        ) {
-          this.closeCaveGate();
+        } else {
+          // Grace after waking or shutting the gate, so soldiers standing next
+          // to the boss can retreat before it swings again — otherwise a
+          // crowded squad is devoured two by two in an endless sleep chain.
+          this.cyclopsNextStrikeAt = Math.max(
+            this.cyclopsNextStrikeAt,
+            this.time.now + 2_400,
+          );
+          const gateIsOpen =
+            !!this.caveGate && this.caveGate.x > CAVE_GATE_POSITION.x + 40;
+          if (gateIsOpen) this.closeCaveGate();
+          if (event.phase === "sleeping") {
+            this.cyclopsAggroActive = false;
+            this.cancelCyclopsStrike();
+            // The Cyclops never dozes off in a doorway: shut the rock first,
+            // then trudge to the arena centre and curl up there.
+            this.walkCyclopsToSleepSpot(gateIsOpen ? 1_550 : 0);
+          }
         }
         continue;
       }
@@ -2549,14 +3039,32 @@ export class PlayScene extends Phaser.Scene {
       }
       if (event.type === "vision-obscured") {
         this.cancelCyclopsStrike();
-        this.showBossCallout("눈 찌르기 성공 · 8초간 문 개방", "#8ce6d0");
+        this.showBossCallout(
+          "눈 타격 성공 · 시야와 공격 범위가 영구히 줄어듭니다",
+          "#8ce6d0",
+        );
         this.cameras.main.flash(130, 115, 225, 205, false);
+        continue;
+      }
+      if (event.type === "boss-sated") {
+        this.showBossCallout("병사 2명을 삼키고 포만감에 잠듭니다", "#ffbd78");
+        continue;
+      }
+      if (event.type === "boss-roared") {
+        this.cyclopsAction = "roar";
+        this.renderCyclopsAction(this.time.now);
+        playSfx("giantAlert", { volume: 0.72, rate: 0.72 });
+        this.cameras.main.shake(520, 0.0062);
         continue;
       }
       if (event.type === "boss-staggered") {
         this.cyclopsAction = "sleep";
         this.renderCyclopsAction(this.time.now);
-        this.showBossCallout("외눈박이 무력화 · 바위문 개방", "#ffe5a6");
+        // With the gate shut the collapse seals the cave — the mission-failed
+        // event that follows owns the messaging.
+        if (this.fifthFloorMission?.status === "active") {
+          this.showBossCallout("외눈박이 무력화 · 바위문 개방 유지", "#ffe5a6");
+        }
         continue;
       }
       if (event.type === "beach-reached") {
@@ -2627,29 +3135,74 @@ export class PlayScene extends Phaser.Scene {
       if (time >= this.cyclopsStrike.resolvesAt) this.resolveCyclopsStrike();
       return;
     }
+    const guardingGate =
+      this.fifthFloorMission.phase === "gate-open" &&
+      this.fifthFloorMission.bossHp > 0;
+    const guardingCave = isCyclopsVisionActive(this.fifthFloorMission);
+    // Awake means dangerous: anyone who wanders close gets swatted, even while
+    // the two chosen sacrifices are still marching in.
+    const guardingBody = isCyclopsAwake(this.fifthFloorMission);
     if (
       time < this.cyclopsNextStrikeAt ||
       time < this.bossGateActionEndsAt ||
-      this.fifthFloorMission.strategy === "stealth-charging" ||
-      !isCyclopsVisionActive(this.fifthFloorMission)
+      (!guardingGate && !guardingCave && !guardingBody)
     ) {
       return;
     }
 
+    const guardProfile = guardingGate
+      ? cyclopsGuardAttackProfile(
+          this.fifthFloorMission.weakPoint === "blinded",
+        )
+      : {
+          detectionRange: CYCLOPS_VIEW_DISTANCE,
+          strikeRadius: CYCLOPS_STRIKE_RADIUS,
+          warningMs: CYCLOPS_STRIKE_WARNING_MS,
+          cooldownMs: CYCLOPS_STRIKE_COOLDOWN_MS,
+        };
+
+    const sacrificeIds = new Set(
+      this.fifthFloorMission.strategy === "stealth-charging"
+        ? this.fifthFloorMission.selectedSacrificeIds
+        : [],
+    );
     const candidates = [
       { x: this.player.x, y: this.player.y },
-      ...this.missionAllies.map((soldier) => ({
-        x: soldier.node.x,
-        y: soldier.node.y,
-      })),
-    ].filter((point) =>
-      isPointInCyclopsVision(
-        point,
-        this.fifthFloorMission!.phase,
-        this.cyclopsBoss!,
-        this.cyclopsFacingAngle,
-      ),
-    );
+      ...this.missionAllies
+        .filter(
+          (soldier) =>
+            soldier.node.active && !sacrificeIds.has(soldier.index),
+        )
+        .map((soldier) => ({
+          x: soldier.node.x,
+          y: soldier.node.y,
+        })),
+    ].filter((point) => {
+      if (guardingGate) {
+        return isPointInCyclopsGuardRange(
+          point,
+          this.cyclopsBoss!,
+          this.fifthFloorMission!.weakPoint === "blinded",
+        );
+      }
+      const nearBody =
+        Phaser.Math.Distance.Between(
+          point.x,
+          point.y,
+          this.cyclopsBoss!.x,
+          this.cyclopsBoss!.y,
+        ) <= CYCLOPS_MELEE_GUARD_RANGE;
+      if (nearBody) return true;
+      return (
+        guardingCave &&
+        isPointInCyclopsVision(
+          point,
+          this.fifthFloorMission!.phase,
+          this.cyclopsBoss!,
+          this.cyclopsFacingAngle,
+        )
+      );
+    });
     let target: CavePoint | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
     for (const candidate of candidates) {
@@ -2664,7 +3217,40 @@ export class PlayScene extends Phaser.Scene {
       nearestDistance = distance;
     }
     if (!target) return;
-    this.beginCyclopsStrike(target, time);
+    this.beginCyclopsStrike(
+      target,
+      time,
+      guardProfile.strikeRadius,
+      guardProfile.warningMs,
+      guardProfile.cooldownMs,
+    );
+  }
+
+  // Only an actual swing freezes the phase countdown: while the boss winds up
+  // or lands a sweep the timetable pauses, but chasing or a standing fight
+  // lets the clock keep running.
+  private isCyclopsAttacking(): boolean {
+    if (!this.fifthFloorMission || !isCyclopsAwake(this.fifthFloorMission)) {
+      return false;
+    }
+    return this.cyclopsStrike !== undefined;
+  }
+
+  // "In combat" gates the physical door work: a striking, chasing, or openly
+  // fought Cyclops never breaks off mid-fight to walk over and shut the rock.
+  private isCyclopsEngagedInCombat(): boolean {
+    if (!this.fifthFloorMission || !isCyclopsAwake(this.fifthFloorMission)) {
+      return false;
+    }
+    return (
+      this.cyclopsStrike !== undefined ||
+      this.cyclopsAggroActive ||
+      // An all-out fight only rages while the boss patrols the cave floor;
+      // soldiers charge (and the boss chases) exclusively in the watching
+      // phase, so a gate-open lull with everyone at a distance is not combat.
+      (this.fifthFloorMission.strategy === "fighting" &&
+        this.fifthFloorMission.phase === "watching")
+    );
   }
 
   private cancelCyclopsStrike(): void {
@@ -2674,11 +3260,17 @@ export class PlayScene extends Phaser.Scene {
     this.cyclopsNextStrikeAt = this.time.now + 650;
   }
 
-  private beginCyclopsStrike(target: CavePoint, time: number): void {
+  private beginCyclopsStrike(
+    target: CavePoint,
+    time: number,
+    radius: number,
+    warningMs: number,
+    cooldownMs: number,
+  ): void {
     if (!this.cyclopsBoss) return;
-    const fill = this.add.circle(0, 0, CYCLOPS_STRIKE_RADIUS, 0xd92f28, 0.18);
+    const fill = this.add.circle(0, 0, radius, 0xd92f28, 0.18);
     const ring = this.add
-      .circle(0, 0, CYCLOPS_STRIKE_RADIUS, 0x000000, 0)
+      .circle(0, 0, radius, 0x000000, 0)
       .setStrokeStyle(7, 0xff4b36, 0.92);
     const inner = this.add
       .circle(0, 0, 18, 0xffd2a3, 0.24)
@@ -2689,7 +3281,7 @@ export class PlayScene extends Phaser.Scene {
     this.tweens.add({
       targets: ring,
       scale: 0.28,
-      duration: CYCLOPS_STRIKE_WARNING_MS,
+      duration: warningMs,
       ease: "Sine.In",
     });
     this.tweens.add({
@@ -2704,14 +3296,16 @@ export class PlayScene extends Phaser.Scene {
       target.y - this.cyclopsBoss.y,
       this.cyclopsDirection,
     );
-    this.cyclopsAction = "attack";
+    this.cyclopsAction = "sweep-windup";
     this.renderCyclopsAction(time);
     playSfx("giantAlert", { volume: 0.46, rate: 1.12 });
     this.cyclopsStrike = {
       marker,
       x: target.x,
       y: target.y,
-      resolvesAt: time + CYCLOPS_STRIKE_WARNING_MS,
+      resolvesAt: time + warningMs,
+      radius,
+      cooldownMs,
     };
   }
 
@@ -2720,7 +3314,7 @@ export class PlayScene extends Phaser.Scene {
     if (!strike || !this.fifthFloorMission) return;
     this.cyclopsStrike = undefined;
     strike.marker.destroy(true);
-    this.cyclopsNextStrikeAt = this.time.now + CYCLOPS_STRIKE_COOLDOWN_MS;
+    this.cyclopsNextStrikeAt = this.time.now + strike.cooldownMs;
     playSfx("giantAttack", { volume: 0.58, rate: 0.88 });
     this.playBossImpact(strike.x, strike.y);
     this.cameras.main.shake(230, 0.008);
@@ -2729,20 +3323,29 @@ export class PlayScene extends Phaser.Scene {
     const playerCaught = isPointInCyclopsStrike(
       this.player,
       strikeTarget,
-      CYCLOPS_STRIKE_RADIUS,
+      strike.radius,
+    );
+    // The chosen sacrifices belong to the meal script, not the sweep — losing
+    // one here would leave a ritual that can never complete.
+    const protectedIds = new Set(
+      this.fifthFloorMission.strategy === "stealth-charging"
+        ? this.fifthFloorMission.selectedSacrificeIds
+        : [],
     );
     const caught = this.missionAllies.filter(
       (soldier) =>
         soldier.node.active &&
-        isPointInCyclopsStrike(
-          soldier.node,
-          strikeTarget,
-          CYCLOPS_STRIKE_RADIUS,
-        ),
+        !protectedIds.has(soldier.index) &&
+        isPointInCyclopsStrike(soldier.node, strikeTarget, strike.radius),
     );
 
     if (caught.length > 0) this.defeatMissionSoldiers(caught);
-    if (playerCaught) {
+    const debugInvulnerable =
+      import.meta.env.DEV &&
+      new URLSearchParams(window.location.search).get(
+        "debugMissionInvulnerable",
+      ) === "1";
+    if (playerCaught && !debugInvulnerable) {
       const failed = failFifthFloorMission(this.fifthFloorMission, "spotted");
       this.fifthFloorMission = failed.state;
       this.handleFifthFloorEvents(failed.events);
@@ -2789,42 +3392,94 @@ export class PlayScene extends Phaser.Scene {
   private openCaveGate(): void {
     if (!this.caveGate || !this.fifthFloorMission) return;
     const poseToken = ++this.bossPoseToken;
-    this.bossGateActionEndsAt = this.time.now + 2_000;
+    const bossCanOpen = this.fifthFloorMission.bossHp > 0;
+    const roarFirst =
+      bossCanOpen && this.fifthFloorMission.weakPoint === "blinded";
+    const approachDelay = roarFirst ? 850 : 0;
+    this.bossGateActionEndsAt = this.time.now + approachDelay + 2_650;
+    this.caveGateStateLabel
+      ?.setText("열리는 중 · 보스가 바위를 들어 올립니다")
+      .setColor("#ffd27a")
+      .setBackgroundColor("#241306e8");
     const boss = this.cyclopsBoss;
-    if (boss) {
+    if (boss && bossCanOpen) {
       this.cyclopsDirection = directionFromAxes(
         CAVE_GATE_POSITION.x - boss.x,
         CAVE_GATE_POSITION.y - boss.y,
         this.cyclopsDirection,
       );
-      this.cyclopsAction = "walk";
+      this.cyclopsAction = roarFirst ? "roar" : "walk";
       this.renderCyclopsAction(this.time.now);
       this.tweens.killTweensOf(boss);
-      this.tweens.add({
-        targets: boss,
-        x: CAVE_GATE_POSITION.x - 230,
-        y: CAVE_GATE_POSITION.y + 18,
-        duration: 720,
-        ease: "Sine.InOut",
-        onUpdate: () =>
-          this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
+      this.time.delayedCall(approachDelay, () => {
+        if (this.bossPoseToken !== poseToken || !boss.active) return;
+        this.cyclopsAction = "walk";
+        this.renderCyclopsAction(this.time.now);
+        this.tweens.add({
+          targets: boss,
+          x: CAVE_GATE_POSITION.x - 230,
+          y: CAVE_GATE_POSITION.y + 18,
+          duration: 900,
+          ease: "Sine.InOut",
+          onUpdate: () =>
+            this.cyclopsName?.setPosition(
+              boss.x,
+              boss.y - CYCLOPS_LABEL_OFFSET,
+            ),
+        });
       });
-    }
-    this.time.delayedCall(700, () => {
-      if (!this.caveGate || this.bossPoseToken !== poseToken) return;
-      this.cyclopsAction = "rock";
+    } else if (boss) {
+      this.cyclopsAction = "sleep";
       this.renderCyclopsAction(this.time.now);
+    }
+    this.time.delayedCall(approachDelay + 900, () => {
+      if (!this.caveGate || this.bossPoseToken !== poseToken) return;
+      if (bossCanOpen) {
+        this.cyclopsDirection = "east";
+        this.cyclopsAction = "gate-open";
+        this.renderCyclopsAction(this.time.now);
+        this.caveGate.setAlpha(0);
+      }
       if (this.caveGateCollider) {
         const index = this.collisionRects.indexOf(this.caveGateCollider);
         if (index >= 0) this.collisionRects.splice(index, 1);
       }
+      this.caveGateWalkable = true;
       this.tweens.killTweensOf(this.caveGate);
       this.tweens.add({
         targets: this.caveGate,
-        x: CAVE_GATE_POSITION.x + 218,
-        angle: 13,
-        duration: 1_100,
-        ease: "Sine.InOut",
+        x: CAVE_GATE_POSITION.x + 165,
+        y: CAVE_GATE_POSITION.y - 300,
+        angle: 22,
+        scale: 0.82,
+        duration: 1_250,
+        ease: "Cubic.InOut",
+        onUpdate: () => {
+          if (boss && bossCanOpen) {
+            boss.setPosition(
+              CAVE_GATE_POSITION.x -
+                230 +
+                Math.max(0, this.caveGate!.x - CAVE_GATE_POSITION.x) * 0.1,
+              CAVE_GATE_POSITION.y + 18 -
+                Math.max(0, CAVE_GATE_POSITION.y - this.caveGate!.y) * 0.44,
+            );
+            this.cyclopsName?.setPosition(
+              boss.x,
+              boss.y - CYCLOPS_LABEL_OFFSET,
+            );
+          }
+        },
+        onComplete: () => {
+          this.caveGate?.setAlpha(1);
+          if (boss && bossCanOpen) {
+            this.cyclopsAction = "idle";
+            this.renderCyclopsAction(this.time.now);
+          }
+          this.caveGateStateLabel
+            ?.setText("열림 · 지금 통과 가능")
+            .setColor("#8ff2d2")
+            .setBackgroundColor("#06231de8");
+        },
       });
       const targetOutside = this.fifthFloorMission?.flockDirection === "out";
       this.moveMissionSheep(targetOutside ? "outside" : "inside");
@@ -2837,13 +3492,23 @@ export class PlayScene extends Phaser.Scene {
   private closeCaveGate(): void {
     if (!this.caveGate) return;
     const poseToken = ++this.bossPoseToken;
+    this.caveGateWalkable = false;
     this.bossGateActionEndsAt = this.time.now + 1_650;
     this.cyclopsAggroActive = false;
-    this.cyclopsAction = "rock";
+    this.caveGateStateLabel
+      ?.setText("닫히는 중 · 통로에서 벗어나세요")
+      .setColor("#ffb08f")
+      .setBackgroundColor("#2a0d08e8");
+    this.cyclopsAction = "walk";
+    this.cyclopsDirection = "east";
     this.renderCyclopsAction(this.time.now);
     const boss = this.cyclopsBoss;
     if (boss) {
       this.tweens.killTweensOf(boss);
+      boss.setPosition(
+        CAVE_GATE_POSITION.x - 214,
+        CAVE_GATE_POSITION.y - 114,
+      );
       this.tweens.add({
         targets: boss,
         x: CAVE_GATE_POSITION.x - 230,
@@ -2857,23 +3522,84 @@ export class PlayScene extends Phaser.Scene {
     this.time.delayedCall(500, () => {
       if (!this.caveGate || this.bossPoseToken !== poseToken) return;
       this.tweens.killTweensOf(this.caveGate);
+      this.cyclopsAction = "gate-close";
+      this.renderCyclopsAction(this.time.now);
+      this.caveGate.setAlpha(0);
       this.tweens.add({
         targets: this.caveGate,
         x: CAVE_GATE_POSITION.x,
+        y: CAVE_GATE_POSITION.y,
         angle: 0,
+        scale: 1,
         duration: 900,
-        ease: "Sine.InOut",
+        ease: "Cubic.InOut",
         onComplete: () => {
+          this.caveGate?.setAlpha(1);
           if (
             this.caveGateCollider &&
             !this.collisionRects.includes(this.caveGateCollider)
           ) {
             this.collisionRects.push(this.caveGateCollider);
           }
+          this.caveGateStateLabel
+            ?.setText("닫힘 · 통과 불가")
+            .setColor("#ff9e80")
+            .setBackgroundColor("#2a0d08e8");
         },
       });
       playSfx("stoneDoor", { volume: 0.4, rate: 0.76 });
       this.cameras.main.shake(480, 0.003);
+    });
+  }
+
+  private walkCyclopsToSleepSpot(delayMs: number): void {
+    this.time.delayedCall(delayMs, () => {
+      const boss = this.cyclopsBoss;
+      if (!boss?.active || this.fifthFloorMission?.phase !== "sleeping") {
+        return;
+      }
+      this.tweens.killTweensOf(boss);
+      const distance = Phaser.Math.Distance.Between(
+        boss.x,
+        boss.y,
+        CYCLOPS_SLEEP_POSITION.x,
+        CYCLOPS_SLEEP_POSITION.y,
+      );
+      const duration = Math.min(
+        4_200,
+        (distance / CYCLOPS_CHASE_SPEED) * 1_000,
+      );
+      if (duration < 60) {
+        this.cyclopsAction = "sleep";
+        this.renderCyclopsAction(this.time.now);
+        return;
+      }
+      this.bossGateActionEndsAt = this.time.now + duration + 200;
+      this.cyclopsDirection = directionFromAxes(
+        CYCLOPS_SLEEP_POSITION.x - boss.x,
+        CYCLOPS_SLEEP_POSITION.y - boss.y,
+        this.cyclopsDirection,
+      );
+      this.cyclopsAction = "walk";
+      this.renderCyclopsAction(this.time.now);
+      this.tweens.add({
+        targets: boss,
+        x: CYCLOPS_SLEEP_POSITION.x,
+        y: CYCLOPS_SLEEP_POSITION.y,
+        duration,
+        ease: "Sine.InOut",
+        onUpdate: () =>
+          this.cyclopsName?.setPosition(
+            boss.x,
+            boss.y - CYCLOPS_LABEL_OFFSET,
+          ),
+        onComplete: () => {
+          if (this.fifthFloorMission?.phase !== "sleeping") return;
+          this.bossGateActionEndsAt = Number.NEGATIVE_INFINITY;
+          this.cyclopsAction = "sleep";
+          this.renderCyclopsAction(this.time.now);
+        },
+      });
     });
   }
 
@@ -2888,6 +3614,28 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
     this.cyclopsVision.clear();
+    // The attack reach is always drawn while the boss is awake, and strikes
+    // are only ever aimed inside it — what the ring shows is what can hit.
+    if (isCyclopsAwake(this.fifthFloorMission)) {
+      const guardRange =
+        this.fifthFloorMission.phase === "gate-open"
+          ? cyclopsGuardAttackProfile(
+              this.fifthFloorMission.weakPoint === "blinded",
+            ).detectionRange
+          : CYCLOPS_MELEE_GUARD_RANGE;
+      this.cyclopsVision.fillStyle(0xd9422e, 0.045);
+      this.cyclopsVision.fillCircle(
+        this.cyclopsBoss.x,
+        this.cyclopsBoss.y,
+        guardRange,
+      );
+      this.cyclopsVision.lineStyle(3, 0xff7a4d, 0.42);
+      this.cyclopsVision.strokeCircle(
+        this.cyclopsBoss.x,
+        this.cyclopsBoss.y,
+        guardRange,
+      );
+    }
     if (!isCyclopsVisionActive(this.fifthFloorMission)) return;
     const start = this.cyclopsFacingAngle - CYCLOPS_VIEW_HALF_ANGLE;
     const end = this.cyclopsFacingAngle + CYCLOPS_VIEW_HALF_ANGLE;
@@ -3502,11 +4250,10 @@ export class PlayScene extends Phaser.Scene {
     );
     const aimDifference = Math.abs(Phaser.Math.Angle.Wrap(bossAngle - angle));
     if (distance > range + CYCLOPS_BODY_RADIUS || aimDifference > 0.5) return;
-    const aimedAtEye = aimDifference <= 0.16;
     const hit = hitCyclopsWithBasicAttack(
       this.fifthFloorMission,
       damage,
-      aimedAtEye,
+      false,
     );
     this.fifthFloorMission = hit.state;
     this.handleFifthFloorEvents(hit.events);
@@ -4819,6 +5566,11 @@ export class PlayScene extends Phaser.Scene {
     const dispatch = useGameStore.getState().dispatch;
     if (this.isFifthFloor() && target === "rest" && this.fifthFloorMission) {
       const escaped = escapeFifthFloorMission(this.fifthFloorMission);
+      this.fifthFloorMission = escaped.state;
+      if (escaped.state.status === "failed") {
+        this.handleFifthFloorEvents(escaped.events);
+        return;
+      }
       if (escaped.state.status !== "escaped") {
         this.transitioning = false;
         this.showBossCallout(
@@ -4829,7 +5581,6 @@ export class PlayScene extends Phaser.Scene {
         );
         return;
       }
-      this.fifthFloorMission = escaped.state;
       this.publishFifthFloorMission(true);
       dispatch({ type: "COMPLETE_FLOOR" });
       return;

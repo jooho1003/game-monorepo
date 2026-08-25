@@ -1,24 +1,29 @@
 export const FIFTH_FLOOR_MISSION_DURATION_MS = 300_000;
-export const CYCLOPS_WATCH_DURATION_MS = 15_000;
+export const CYCLOPS_WATCH_DURATION_MS = 6_000;
 export const CYCLOPS_SLEEP_DURATION_MS = 15_000;
 export const CYCLOPS_GATE_OPEN_DURATION_MS = 30_000;
 export const FIFTH_FLOOR_ALLY_COUNT = 15;
 export const FIFTH_FLOOR_SHEEP_COUNT = 20;
+export const FIFTH_FLOOR_MIN_ESCAPE_ALLIES = 6;
 export const CYCLOPS_MEAL_SIZE = 2;
 export const CYCLOPS_MAX_HP = 1_200;
-export const CYCLOPS_BLINDED_DURATION_MS = 8_000;
 
 export type FifthFloorPhase = "watching" | "sleeping" | "gate-open";
 export type FlockLocation = "inside" | "outside";
 export type FlockDirection = "out" | "in";
 export type FifthFloorStrategy =
+  | "observing"
   | "pending"
   | "stealth-selecting"
   | "stealth-charging"
   | "stealth"
   | "fighting";
 export type FifthFloorMissionStatus = "active" | "escaped" | "failed";
-export type FifthFloorFailureReason = "timeout" | "spotted";
+export type FifthFloorFailureReason =
+  | "timeout"
+  | "spotted"
+  | "too-few-survivors"
+  | "gate-sealed";
 export type CyclopsWeakPoint = "dormant" | "primed" | "blinded";
 
 export interface FifthFloorMissionState {
@@ -27,8 +32,11 @@ export interface FifthFloorMissionState {
   remainingMs: number;
   phase: FifthFloorPhase;
   phaseRemainingMs: number;
+  phaseTimerHeld: boolean;
+  soldiersEaten: number;
   alliesRemaining: number;
   sheepCount: number;
+  sheepAtBeach: number;
   flockLocation: FlockLocation;
   flockDirection: FlockDirection;
   strategy: FifthFloorStrategy;
@@ -48,6 +56,8 @@ export type FifthFloorMissionEvent =
   | { type: "charge-commanded" }
   | { type: "sacrifice-charge-commanded"; soldierIds: readonly number[] }
   | { type: "allies-sacrificed"; soldierIds: readonly number[] }
+  | { type: "sacrifice-reset" }
+  | { type: "strategy-revoked" }
   | { type: "phase-changed"; phase: FifthFloorPhase }
   | {
       type: "flock-moved";
@@ -56,7 +66,9 @@ export type FifthFloorMissionEvent =
     }
   | { type: "mission-escaped" }
   | { type: "mission-failed"; reason: FifthFloorFailureReason }
-  | { type: "vision-obscured"; durationMs: number }
+  | { type: "vision-obscured" }
+  | { type: "boss-sated" }
+  | { type: "boss-roared" }
   | { type: "boss-damaged"; amount: number; hp: number }
   | { type: "boss-staggered" }
   | { type: "beach-reached" };
@@ -73,11 +85,14 @@ export function createFifthFloorMission(): FifthFloorMissionState {
     remainingMs: FIFTH_FLOOR_MISSION_DURATION_MS,
     phase: "watching",
     phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+    phaseTimerHeld: false,
+    soldiersEaten: 0,
     alliesRemaining: FIFTH_FLOOR_ALLY_COUNT,
     sheepCount: FIFTH_FLOOR_SHEEP_COUNT,
+    sheepAtBeach: 0,
     flockLocation: "inside",
     flockDirection: "out",
-    strategy: "pending",
+    strategy: "observing",
     activeSoldierIds: Array.from(
       { length: FIFTH_FLOOR_ALLY_COUNT },
       (_, index) => index,
@@ -99,7 +114,7 @@ export function chooseFifthFloorStrategy(
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
-    state.phase !== "watching" ||
+    state.phase === "sleeping" ||
     state.strategy !== "pending"
   ) {
     return { state, events: [] };
@@ -110,7 +125,10 @@ export function chooseFifthFloorStrategy(
       state: {
         ...state,
         strategy: "fighting",
-        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+        phaseRemainingMs:
+          state.phase === "watching"
+            ? CYCLOPS_WATCH_DURATION_MS
+            : state.phaseRemainingMs,
       },
       events: [{ type: "charge-commanded" }],
     };
@@ -126,13 +144,31 @@ export function chooseFifthFloorStrategy(
   };
 }
 
+// X undoes the standing order. A fight can be called off and a half-picked
+// sacrifice can be abandoned; a charge already committed cannot be recalled.
+export function revokeFifthFloorStrategy(
+  state: FifthFloorMissionState,
+): FifthFloorMissionResult {
+  if (
+    state.status !== "active" ||
+    state.phase === "sleeping" ||
+    (state.strategy !== "fighting" && state.strategy !== "stealth-selecting")
+  ) {
+    return { state, events: [] };
+  }
+  return {
+    state: { ...state, strategy: "pending", selectedSacrificeIds: [] },
+    events: [{ type: "strategy-revoked" }],
+  };
+}
+
 export function toggleFifthFloorSacrifice(
   state: FifthFloorMissionState,
   soldierId: number,
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
-    state.phase !== "watching" ||
+    state.phase === "sleeping" ||
     state.strategy !== "stealth-selecting" ||
     !Number.isInteger(soldierId) ||
     !state.activeSoldierIds.includes(soldierId)
@@ -153,7 +189,7 @@ export function commandFifthFloorSacrificeCharge(
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
-    state.phase !== "watching" ||
+    state.phase === "sleeping" ||
     state.strategy !== "stealth-selecting" ||
     state.selectedSacrificeIds.length !== CYCLOPS_MEAL_SIZE
   ) {
@@ -163,7 +199,10 @@ export function commandFifthFloorSacrificeCharge(
     state: {
       ...state,
       strategy: "stealth-charging",
-      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      phaseRemainingMs:
+        state.phase === "watching"
+          ? CYCLOPS_WATCH_DURATION_MS
+          : state.phaseRemainingMs,
     },
     events: [
       {
@@ -179,7 +218,7 @@ export function completeFifthFloorSacrifice(
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
-    state.phase !== "watching" ||
+    state.phase === "sleeping" ||
     state.strategy !== "stealth-charging" ||
     state.selectedSacrificeIds.length !== CYCLOPS_MEAL_SIZE
   ) {
@@ -209,9 +248,20 @@ export function completeFifthFloorSacrifice(
   };
 }
 
+export interface AdvanceFifthFloorOptions {
+  /**
+   * True only while the boss is mid-attack (a sweep windup or impact). The
+   * rock-gate schedule freezes for the duration of the swing and nothing
+   * else: chasing, being harassed, or a standing fight no longer stop the
+   * timetable. The five-minute mission clock keeps running regardless.
+   */
+  holdPhaseTimer?: boolean;
+}
+
 export function advanceFifthFloorMission(
   state: FifthFloorMissionState,
   elapsedMs: number,
+  options?: AdvanceFifthFloorOptions,
 ): FifthFloorMissionResult {
   if (
     state.status !== "active" ||
@@ -221,14 +271,51 @@ export function advanceFifthFloorMission(
     return { state, events: [] };
   }
 
-  let current = state;
+  const holdPhaseTimer = options?.holdPhaseTimer === true;
+  let current =
+    state.phaseTimerHeld === holdPhaseTimer
+      ? state
+      : { ...state, phaseTimerHeld: holdPhaseTimer };
   let unconsumedMs = elapsedMs;
   const events: FifthFloorMissionEvent[] = [];
 
+  if (holdPhaseTimer) {
+    const step = Math.min(unconsumedMs, current.remainingMs);
+    current = {
+      ...current,
+      remainingMs: current.remainingMs - step,
+      weakPointRemainingMs: Math.max(0, current.weakPointRemainingMs - step),
+    };
+    if (current.remainingMs <= 0) {
+      const failure = failFifthFloorMission(current, "timeout");
+      current = failure.state;
+      events.push(...failure.events);
+    }
+    return { state: current, events };
+  }
+
   while (unconsumedMs > 0 && current.status === "active") {
     if (
+      current.phase === "gate-open" &&
+      current.phaseRemainingMs <= 0
+    ) {
+      const step = Math.min(unconsumedMs, current.remainingMs);
+      current = {
+        ...current,
+        remainingMs: current.remainingMs - step,
+        weakPointRemainingMs: Math.max(0, current.weakPointRemainingMs - step),
+      };
+      unconsumedMs -= step;
+      if (current.remainingMs <= 0) {
+        const failure = failFifthFloorMission(current, "timeout");
+        current = failure.state;
+        events.push(...failure.events);
+      }
+      break;
+    }
+    if (
       current.phase === "watching" &&
-      current.strategy !== "fighting"
+      current.strategy === "stealth"
     ) {
       const step = Math.min(unconsumedMs, current.remainingMs);
       current = {
@@ -266,25 +353,16 @@ export function advanceFifthFloorMission(
       break;
     }
 
-    if (current.weakPointRemainingMs <= 0 && current.weakPoint === "blinded") {
-      current = {
-        ...current,
-        weakPoint: "dormant",
-        weakPointRemainingMs: 0,
-      };
-    }
-
     if (current.phaseRemainingMs > 0) break;
 
     if (current.phase === "watching") {
-      if (current.strategy === "fighting") {
-        if (current.alliesRemaining > 0) {
-          current = {
-            ...current,
-            phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
-          };
-          continue;
-        }
+      if (
+        current.strategy === "observing" ||
+        current.strategy === "pending" ||
+        current.strategy === "stealth-selecting" ||
+        current.strategy === "stealth-charging" ||
+        current.strategy === "fighting"
+      ) {
         current = {
           ...current,
           phase: "gate-open",
@@ -303,37 +381,77 @@ export function advanceFifthFloorMission(
     if (current.phase === "sleeping") {
       current = {
         ...current,
-        phase: "gate-open",
-        phaseRemainingMs: CYCLOPS_GATE_OPEN_DURATION_MS,
-        weakPoint: "dormant",
+        phase: "watching",
+        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+        strategy: "pending",
+        // A pierced eye never heals: blindness survives every wake-up.
+        weakPoint: current.weakPoint === "blinded" ? "blinded" : "dormant",
         weakPointRemainingMs: 0,
       };
-      events.push({ type: "phase-changed", phase: "gate-open" });
+      events.push({ type: "phase-changed", phase: "watching" });
       continue;
     }
 
-    const flockLocation: FlockLocation =
-      current.flockDirection === "out" ? "outside" : "inside";
-    const nextDirection: FlockDirection =
-      current.flockDirection === "out" ? "in" : "out";
-    current = {
-      ...current,
+    if (
+      current.phase === "gate-open" &&
+      current.strategy === "stealth" &&
+      current.bossHp > 0
+    ) {
+      current = {
+        ...current,
+        phase: "watching",
+        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+        strategy: "pending",
+        weakPoint: current.weakPoint === "blinded" ? "blinded" : "dormant",
+        weakPointRemainingMs: 0,
+      };
+      events.push({ type: "phase-changed", phase: "watching" });
+      continue;
+    }
+
+    // The physical walkers decide when the gate can close. A timer must never
+    // shut the rock on a sheep that is still crossing the doorway.
+    current = { ...current, phaseRemainingMs: 0 };
+    continue;
+  }
+
+  return { state: current, events };
+}
+
+export function completeFifthFloorFlockTransit(
+  state: FifthFloorMissionState,
+): FifthFloorMissionResult {
+  if (
+    state.status !== "active" ||
+    state.phase !== "gate-open" ||
+    state.bossHp <= 0
+  ) {
+    return { state, events: [] };
+  }
+  const flockLocation: FlockLocation =
+    state.flockDirection === "out" ? "outside" : "inside";
+  const nextDirection: FlockDirection =
+    state.flockDirection === "out" ? "in" : "out";
+  const strategy: FifthFloorStrategy =
+    state.strategy === "observing" || state.strategy === "stealth"
+      ? "pending"
+      : state.strategy;
+  return {
+    state: {
+      ...state,
       phase: "watching",
       phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
       flockLocation,
       flockDirection: nextDirection,
-      strategy: "pending",
-      selectedSacrificeIds: [],
-      cycle: current.cycle + 1,
-      alliesAtBeach: 0,
-    };
-    events.push(
+      sheepAtBeach: flockLocation === "outside" ? state.sheepCount : 0,
+      strategy,
+      cycle: state.cycle + 1,
+    },
+    events: [
       { type: "flock-moved", location: flockLocation, nextDirection },
       { type: "phase-changed", phase: "watching" },
-    );
-  }
-
-  return { state: current, events };
+    ],
+  };
 }
 
 export function escapeFifthFloorMission(
@@ -343,6 +461,9 @@ export function escapeFifthFloorMission(
   if (state.remainingMs <= 0) return failFifthFloorMission(state, "timeout");
   if (!state.reachedBeach || state.alliesAtBeach < state.alliesRemaining) {
     return { state, events: [] };
+  }
+  if (state.alliesRemaining < FIFTH_FLOOR_MIN_ESCAPE_ALLIES) {
+    return failFifthFloorMission(state, "too-few-survivors");
   }
   return {
     state: { ...state, status: "escaped" },
@@ -375,6 +496,16 @@ export function updateFifthFloorAlliesAtBeach(
   return { state: { ...state, alliesAtBeach }, events: [] };
 }
 
+export function updateFifthFloorSheepAtBeach(
+  state: FifthFloorMissionState,
+  count: number,
+): FifthFloorMissionResult {
+  if (state.status !== "active") return { state, events: [] };
+  const sheepAtBeach = Math.max(0, Math.min(state.sheepCount, Math.trunc(count)));
+  if (sheepAtBeach === state.sheepAtBeach) return { state, events: [] };
+  return { state: { ...state, sheepAtBeach }, events: [] };
+}
+
 export function loseFifthFloorAllies(
   state: FifthFloorMissionState,
   count: number,
@@ -384,8 +515,8 @@ export function loseFifthFloorAllies(
   if (lost === 0) return { state, events: [] };
   const activeSoldierIds = state.activeSoldierIds.slice(0, -lost);
   const alliesRemaining = activeSoldierIds.length;
-  return {
-    state: {
+  const digested = digestFallenSoldiers(
+    {
       ...state,
       activeSoldierIds,
       selectedSacrificeIds: state.selectedSacrificeIds.filter((id) =>
@@ -394,7 +525,11 @@ export function loseFifthFloorAllies(
       alliesRemaining,
       alliesAtBeach: Math.min(state.alliesAtBeach, alliesRemaining),
     },
-    events: [{ type: "allies-lost", count: lost }],
+    lost,
+  );
+  return {
+    state: digested.state,
+    events: [{ type: "allies-lost", count: lost }, ...digested.events],
   };
 }
 
@@ -410,8 +545,8 @@ export function loseFifthFloorSoldiers(
   const activeSoldierIds = state.activeSoldierIds.filter(
     (id) => !lostIds.has(id),
   );
-  return {
-    state: {
+  const digested = digestFallenSoldiers(
+    {
       ...state,
       activeSoldierIds,
       selectedSacrificeIds: state.selectedSacrificeIds.filter((id) =>
@@ -420,7 +555,44 @@ export function loseFifthFloorSoldiers(
       alliesRemaining: activeSoldierIds.length,
       alliesAtBeach: Math.min(state.alliesAtBeach, activeSoldierIds.length),
     },
-    events: [{ type: "allies-lost", count: lostIds.size }],
+    lostIds.size,
+  );
+  return {
+    state: digested.state,
+    events: [{ type: "allies-lost", count: lostIds.size }, ...digested.events],
+  };
+}
+
+// Two soldiers make a full meal. A sated Cyclops always shuts the rock gate
+// first and only then lies down — the eye becomes vulnerable again.
+function digestFallenSoldiers(
+  state: FifthFloorMissionState,
+  eaten: number,
+): FifthFloorMissionResult {
+  const soldiersEaten = state.soldiersEaten + eaten;
+  if (
+    soldiersEaten < CYCLOPS_MEAL_SIZE ||
+    state.bossHp <= 0 ||
+    state.phase === "sleeping"
+  ) {
+    return { state: { ...state, soldiersEaten }, events: [] };
+  }
+  const events: FifthFloorMissionEvent[] = [];
+  let next: FifthFloorMissionState = { ...state, soldiersEaten };
+  if (
+    next.strategy === "stealth-selecting" ||
+    next.strategy === "stealth-charging"
+  ) {
+    // Other soldiers completed the meal before the hand-picked pair arrived:
+    // the marked two are spared, their designation is cleared, and the boss
+    // dozes off regardless.
+    next = { ...next, strategy: "pending", selectedSacrificeIds: [] };
+    events.push({ type: "sacrifice-reset" });
+  }
+  const sleeping = beginCyclopsSleep(next);
+  return {
+    state: sleeping.state,
+    events: [...events, { type: "boss-sated" }, ...sleeping.events],
   };
 }
 
@@ -437,25 +609,27 @@ export function hitCyclopsWithBasicAttack(
     aimedAtEye
   ) {
     const hit = damageCyclops(state, Math.max(1, damage * 3));
-    const defeated = hit.state.bossHp === 0;
+    if (hit.state.status !== "active" || hit.state.bossHp === 0) {
+      // The boss died in its sleep behind a closed gate — damageCyclops has
+      // already sealed the mission as failed; no wake-up follows.
+      return hit;
+    }
+    // The stab blinds forever but grants no shortcut: the boss merely wakes
+    // and the rock-gate timetable resumes on its own schedule.
     return {
       state: {
         ...hit.state,
-        phase: "gate-open",
-        phaseRemainingMs: defeated
-          ? CYCLOPS_GATE_OPEN_DURATION_MS
-          : CYCLOPS_BLINDED_DURATION_MS,
+        phase: "watching",
+        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+        strategy: "pending",
         weakPoint: "blinded",
-        weakPointRemainingMs: defeated
-          ? CYCLOPS_GATE_OPEN_DURATION_MS
-          : CYCLOPS_BLINDED_DURATION_MS,
+        weakPointRemainingMs: 0,
       },
       events: [
         ...hit.events,
-        { type: "vision-obscured", durationMs: CYCLOPS_BLINDED_DURATION_MS },
-        ...(defeated
-          ? []
-          : ([{ type: "phase-changed", phase: "gate-open" }] as const)),
+        { type: "boss-roared" },
+        { type: "vision-obscured" },
+        { type: "phase-changed", phase: "watching" },
       ],
     };
   }
@@ -483,23 +657,34 @@ export function failFifthFloorMission(
 }
 
 export function isCyclopsAwake(state: FifthFloorMissionState): boolean {
-  return state.status === "active" && state.phase === "watching";
+  return (
+    state.status === "active" &&
+    state.bossHp > 0 &&
+    (state.phase === "watching" || state.phase === "gate-open")
+  );
 }
 
 export function isCyclopsVisionActive(state: FifthFloorMissionState): boolean {
-  return isCyclopsAwake(state) && state.weakPoint !== "blinded";
+  return (
+    isCyclopsAwake(state) &&
+    state.phase === "watching" &&
+    state.weakPoint !== "blinded"
+  );
 }
 
 function beginCyclopsSleep(
   state: FifthFloorMissionState,
 ): FifthFloorMissionResult {
+  const alreadyBlinded = state.weakPoint === "blinded";
   return {
     state: {
       ...state,
       phase: "sleeping",
       phaseRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
-      weakPoint: "primed",
-      weakPointRemainingMs: CYCLOPS_SLEEP_DURATION_MS,
+      soldiersEaten: 0,
+      // A pierced eye cannot be primed a second time.
+      weakPoint: alreadyBlinded ? "blinded" : "primed",
+      weakPointRemainingMs: alreadyBlinded ? 0 : CYCLOPS_SLEEP_DURATION_MS,
     },
     events: [{ type: "phase-changed", phase: "sleeping" }],
   };
@@ -517,17 +702,14 @@ function damageCyclops(
   ];
   let next: FifthFloorMissionState = { ...state, bossHp };
   if (bossHp === 0) {
-    next = {
-      ...next,
-      phase: "gate-open",
-      phaseRemainingMs: CYCLOPS_GATE_OPEN_DURATION_MS,
-      weakPoint: "blinded",
-      weakPointRemainingMs: CYCLOPS_GATE_OPEN_DURATION_MS,
-    };
-    events.push(
-      { type: "boss-staggered" },
-      { type: "phase-changed", phase: "gate-open" },
-    );
+    next = { ...next, weakPoint: "blinded", weakPointRemainingMs: 0 };
+    events.push({ type: "boss-staggered" });
+    // Only the Cyclops can move the rock. Downing it while the gate is shut
+    // seals the cave for good — the escape is lost, not won.
+    if (next.phase !== "gate-open") {
+      const failure = failFifthFloorMission(next, "gate-sealed");
+      return { state: failure.state, events: [...events, ...failure.events] };
+    }
   }
   return { state: next, events };
 }

@@ -306,19 +306,21 @@ export function transition(
       if (snapshot.zone !== "battle" || snapshot.floor !== 5) {
         return { snapshot, events: [] };
       }
-      const spotted = command.reason === "spotted";
+      const failureNotices = {
+        spotted: "외눈박이의 손에 붙잡혀 사망한 뒤 휴식처로 귀환했습니다.",
+        "too-few-survivors": "탈출 병사가 6명 미만이라 임무에 실패했습니다.",
+        "gate-sealed":
+          "바위문이 닫힌 채 외눈박이가 쓰러져 출구가 막혔습니다.",
+        timeout: "5분 안에 탈출하지 못해 휴식처로 귀환했습니다.",
+      } as const;
       return {
         snapshot: {
           ...snapshot,
           zone: "rest",
           hp: 100,
           objective: "5층 공략 게이트에서 외눈박이의 동굴에 다시 도전하세요.",
-          notice: spotted
-            ? "외눈박이의 손에 붙잡혀 사망한 뒤 휴식처로 귀환했습니다."
-            : "5분 안에 탈출하지 못해 휴식처로 귀환했습니다.",
-          lastMissionResult: spotted
-            ? "failure-spotted"
-            : "failure-timeout",
+          notice: failureNotices[command.reason],
+          lastMissionResult: `failure-${command.reason}`,
         },
         events: [
           { type: "mission-failed", reason: command.reason },

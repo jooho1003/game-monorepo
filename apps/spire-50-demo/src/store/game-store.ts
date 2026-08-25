@@ -22,6 +22,7 @@ interface GameStore {
     | { id: number; type: "strategy"; stealth: boolean }
     | { id: number; type: "toggle-sacrifice"; soldierId: number }
     | { id: number; type: "confirm-sacrifice" }
+    | { id: number; type: "revoke-strategy" }
     | null;
   dispatch: (command: GameCommand) => void;
   clearEvents: () => void;
@@ -29,6 +30,7 @@ interface GameStore {
   requestFifthFloorStrategy: (stealth: boolean) => void;
   requestFifthFloorSacrificeToggle: (soldierId: number) => void;
   requestFifthFloorSacrificeCharge: () => void;
+  requestFifthFloorStrategyRevoke: () => void;
   clearFifthFloorCommandRequest: () => void;
 }
 
@@ -90,6 +92,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       fifthFloorCommandRequest: {
         id: (state.fifthFloorCommandRequest?.id ?? 0) + 1,
         type: "confirm-sacrifice",
+      },
+    })),
+  requestFifthFloorStrategyRevoke: () =>
+    set((state) => ({
+      fifthFloorCommandRequest: {
+        id: (state.fifthFloorCommandRequest?.id ?? 0) + 1,
+        type: "revoke-strategy",
       },
     })),
   clearFifthFloorCommandRequest: () => set({ fifthFloorCommandRequest: null }),

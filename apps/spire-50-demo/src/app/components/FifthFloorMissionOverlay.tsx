@@ -1,17 +1,20 @@
-import { useEffect } from "react";
-import type { FifthFloorMissionState } from "../../domain/fifth-floor-mission.js";
+import { useEffect, useState } from "react";
+import {
+  FIFTH_FLOOR_MIN_ESCAPE_ALLIES,
+  type FifthFloorMissionState,
+} from "../../domain/fifth-floor-mission.js";
 import { useGameStore } from "../../store/game-store.js";
 
 const phaseLabels: Record<FifthFloorMissionState["phase"], string> = {
-  watching: "경계 중",
+  watching: "바위문 열림까지",
   sleeping: "수면 중",
-  "gate-open": "탈출로 개방",
+  "gate-open": "바위문 열림",
 };
 
 const weakPointLabels: Record<FifthFloorMissionState["weakPoint"], string> = {
   dormant: "눈 보호 중",
-  primed: "눈을 조준해 기본 공격",
-  blinded: "시야·공격 정지",
+  primed: "눈 앞에서 G",
+  blinded: "문 앞 공격범위 축소",
 };
 
 export function FifthFloorMissionOverlay() {
@@ -25,11 +28,28 @@ export function FifthFloorMissionOverlay() {
   const confirmSacrifice = useGameStore(
     (state) => state.requestFifthFloorSacrificeCharge,
   );
+  const revokeStrategy = useGameStore(
+    (state) => state.requestFifthFloorStrategyRevoke,
+  );
+  const [showDetails, setShowDetails] = useState(false);
   const pending =
-    mission?.phase === "watching" && mission.strategy === "pending";
+    mission?.phase !== "sleeping" && mission?.strategy === "pending";
   const selecting =
-    mission?.phase === "watching" &&
-    mission.strategy === "stealth-selecting";
+    mission?.phase !== "sleeping" &&
+    mission?.strategy === "stealth-selecting";
+  const fighting =
+    mission?.phase !== "sleeping" && mission?.strategy === "fighting";
+  const revocable = selecting || fighting;
+
+  useEffect(() => {
+    const handleDetailKey = (event: KeyboardEvent) => {
+      if (event.code !== "KeyN") return;
+      event.preventDefault();
+      setShowDetails((visible) => !visible);
+    };
+    window.addEventListener("keydown", handleDetailKey);
+    return () => window.removeEventListener("keydown", handleDetailKey);
+  }, []);
 
   useEffect(() => {
     if (!pending) return;
@@ -47,8 +67,30 @@ export function FifthFloorMissionOverlay() {
     return () => window.removeEventListener("keydown", handleChoiceKey);
   }, [pending, requestStrategy]);
 
+  useEffect(() => {
+    if (!revocable) return;
+    const handleRevokeKey = (event: KeyboardEvent) => {
+      if (event.code !== "KeyX") return;
+      event.preventDefault();
+      revokeStrategy();
+    };
+    window.addEventListener("keydown", handleRevokeKey);
+    return () => window.removeEventListener("keydown", handleRevokeKey);
+  }, [revocable, revokeStrategy]);
+
   if (!mission || mission.status !== "active") return null;
   const phaseSeconds = Math.max(0, Math.ceil(mission.phaseRemainingMs / 1_000));
+  const timerHeld = mission.phaseTimerHeld && mission.phase !== "sleeping";
+  const phaseDetail =
+    mission.phase === "gate-open" && phaseSeconds === 0
+      ? timerHeld
+        ? "공격 중 · 개방 유지"
+        : "양 이동 대기"
+      : timerHeld
+        ? `${phaseSeconds}초 · 공격 중 정지`
+        : mission.phase === "watching"
+          ? `${phaseSeconds}초 전`
+          : `${phaseSeconds}초`;
   const survivorsGathered = mission.alliesAtBeach >= mission.alliesRemaining;
   const missionHint = getMissionHint(mission, survivorsGathered);
   const bossHealthPercent = Math.max(
@@ -57,77 +99,93 @@ export function FifthFloorMissionOverlay() {
   );
 
   return (
-    <section className="cyclops-mission" aria-label="5층 탈출 임무">
-      <div className={`cyclops-mission__summary is-${mission.phase}`}>
-        <div className="cyclops-mission__topline">
-          <div className="cyclops-mission__title">
-            <span>5층 임무 · 외눈박이의 해안</span>
-            <strong>생존자 전원 탈출</strong>
-          </div>
+    <>
+      <section className="cyclops-mission" aria-label="5층 탈출 임무">
+        <div className={`cyclops-mission__topbar is-${mission.phase}`}>
           <div className="cyclops-mission__status-line">
             <i aria-hidden="true" />
             <span>{phaseLabels[mission.phase]}</span>
-            <strong>{phaseSeconds}초</strong>
+            <strong>{phaseDetail}</strong>
           </div>
           <div className="cyclops-mission__clock" role="timer">
             <span>남은 시간</span>
             <strong>{formatTime(mission.remainingMs)}</strong>
           </div>
+          <small className="cyclops-mission__toggle-hint">
+            N {showDetails ? "정보 닫기" : "상세 정보"}
+          </small>
         </div>
+        {showDetails ? (
+          <div className={`cyclops-mission__summary is-${mission.phase}`}>
+            <div className="cyclops-mission__title">
+              <span>5층 임무 · 외눈박이의 해안</span>
+              <strong>병사 6명 이상 탈출</strong>
+            </div>
 
-        <div
-          className="cyclops-mission__boss-health"
-          role="progressbar"
-          aria-label="폴리페모스 체력"
-          aria-valuemin={0}
-          aria-valuemax={mission.bossMaxHp}
-          aria-valuenow={mission.bossHp}
+            <div
+              className="cyclops-mission__boss-health"
+              role="progressbar"
+              aria-label="폴리페모스 체력"
+              aria-valuemin={0}
+              aria-valuemax={mission.bossMaxHp}
+              aria-valuenow={mission.bossHp}
+            >
+              <div>
+                <span>보스 · 폴리페모스</span>
+                <b>
+                  {mission.bossHp} / {mission.bossMaxHp}
+                </b>
+              </div>
+              <span
+                className="cyclops-mission__health-track"
+                aria-hidden="true"
+              >
+                <i style={{ width: `${bossHealthPercent}%` }} />
+              </span>
+            </div>
+
+            <div className="cyclops-mission__meta">
+              <div
+                className="cyclops-mission__squad"
+                role="group"
+                aria-label="아군 현황"
+              >
+                <span>
+                  <small>생존 병사</small>
+                  <b>{mission.alliesRemaining}명</b>
+                </span>
+                <span>
+                  <small>해안 집결</small>
+                  <b>
+                    {mission.alliesAtBeach}/{mission.alliesRemaining}명
+                  </b>
+                </span>
+                <span>
+                  <small>양 해안 이동</small>
+                  <b>
+                    {mission.sheepAtBeach}/{mission.sheepCount}마리
+                  </b>
+                </span>
+              </div>
+              <em className={`is-${mission.weakPoint}`}>
+                <small>보스 약점</small>
+                <b>{weakPointLabels[mission.weakPoint]}</b>
+              </em>
+            </div>
+
+            <p className="cyclops-mission__hint">
+              <span aria-hidden="true">목표</span>
+              {missionHint}
+            </p>
+          </div>
+        ) : null}
+      </section>
+      {pending || selecting || fighting ? (
+        <section
+          className="cyclops-mission cyclops-mission--dock"
+          aria-label="전술 결정"
         >
-          <div>
-            <span>보스 · 폴리페모스</span>
-            <b>
-              {mission.bossHp} / {mission.bossMaxHp}
-            </b>
-          </div>
-          <span className="cyclops-mission__health-track" aria-hidden="true">
-            <i style={{ width: `${bossHealthPercent}%` }} />
-          </span>
-        </div>
-
-        <div className="cyclops-mission__meta">
-          <div
-            className="cyclops-mission__squad"
-            role="group"
-            aria-label="아군 현황"
-          >
-            <span>
-              <small>생존 병사</small>
-              <b>{mission.alliesRemaining}명</b>
-            </span>
-            <span>
-              <small>해안 집결</small>
-              <b>
-                {mission.alliesAtBeach}/{mission.alliesRemaining}명
-              </b>
-            </span>
-            <span>
-              <small>양</small>
-              <b>{mission.sheepCount}마리</b>
-            </span>
-          </div>
-          <em className={`is-${mission.weakPoint}`}>
-            <small>보스 약점</small>
-            <b>{weakPointLabels[mission.weakPoint]}</b>
-          </em>
-        </div>
-
-        <p className="cyclops-mission__hint">
-          <span aria-hidden="true">목표</span>
-          {missionHint}
-        </p>
-      </div>
-      {pending || selecting ? (
-        <div className="cyclops-mission__choice" aria-live="polite">
+          <div className="cyclops-mission__choice" aria-live="polite">
           {pending ? (
             <>
               <div className="cyclops-mission__choice-heading">
@@ -144,7 +202,7 @@ export function FifthFloorMissionOverlay() {
                   <kbd>1</kbd>
                   <span>
                     <strong>은밀히 탈출</strong>
-                    <small>2명을 골라 돌진 · 수면 후 문 개방</small>
+                    <small>2명 희생 · 수면 중 G로 눈 타격</small>
                   </span>
                 </button>
                 <button
@@ -160,12 +218,15 @@ export function FifthFloorMissionOverlay() {
                 </button>
               </div>
             </>
-          ) : (
+          ) : selecting ? (
             <>
               <div className="cyclops-mission__choice-heading is-selecting">
                 <span>희생 병사 선택</span>
                 <strong>돌진시킬 병사 2명을 고르세요</strong>
-                <small>선택한 병사는 외눈박이를 잠재우고 희생됩니다.</small>
+                <small>
+                  선택한 병사는 외눈박이를 잠재우고 희생됩니다. X 키로
+                  선택을 철회할 수 있습니다.
+                </small>
                 <b>{mission.selectedSacrificeIds.length} / 2</b>
               </div>
               <div
@@ -206,11 +267,36 @@ export function FifthFloorMissionOverlay() {
                     : "병사 2명을 선택해야 합니다"}
                 </small>
               </button>
+              <button
+                className="cyclops-mission__charge"
+                type="button"
+                onClick={revokeStrategy}
+              >
+                <strong>선택 철회</strong>
+                <small>X 키 · 전술 결정으로 돌아갑니다</small>
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="cyclops-mission__choice-heading">
+                <span>교전 중</span>
+                <strong>병사들이 외눈박이를 공격하고 있습니다</strong>
+                <small>X 키 또는 버튼으로 공격 명령을 철회할 수 있습니다.</small>
+              </div>
+              <button
+                className="cyclops-mission__charge"
+                type="button"
+                onClick={revokeStrategy}
+              >
+                <strong>공격 명령 철회</strong>
+                <small>X 키 · 병사들이 전투를 멈추고 물러납니다</small>
+              </button>
             </>
           )}
-        </div>
+          </div>
+        </section>
       ) : null}
-    </section>
+    </>
   );
 }
 
@@ -219,22 +305,39 @@ function getMissionHint(
   survivorsGathered: boolean,
 ): string {
   if (mission.phase === "sleeping") {
-    return "잠든 눈을 기본 공격하면 8초 동안 문이 열리고 보스가 공격하지 않습니다.";
+    return "보스의 눈 앞에서 G를 누르세요. 실명은 영구적이며, 바위문은 원래 주기대로 계속 열리고 닫힙니다.";
   }
   if (mission.phase === "gate-open") {
-    if (!mission.reachedBeach) return "바위문을 통과해 해안으로 이동하세요.";
+    if (mission.bossHp > 0) {
+      return mission.flockDirection === "out"
+        ? "양이 모두 나갈 때까지 바위문이 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 잡으러 옵니다."
+        : "양을 모두 들여보내는 동안 바위문이 다시 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 공격합니다.";
+    }
+    if (!mission.reachedBeach) {
+      return mission.bossHp <= 0
+        ? "보스를 쓰러뜨렸습니다. 열린 바위문을 통과하세요."
+        : "공격 범위가 줄어든 보스를 피해 바위문을 통과하세요.";
+    }
     if (!survivorsGathered)
       return "뒤처진 생존 병사를 모두 해안까지 데려오세요.";
-    return "전원 집결 완료 · 청록색 휴식처 게이트로 탈출하세요.";
+    if (mission.alliesRemaining < FIFTH_FLOOR_MIN_ESCAPE_ALLIES) {
+      return `생존 병사가 ${FIFTH_FLOOR_MIN_ESCAPE_ALLIES}명 미만이라 탈출 시 임무가 실패합니다.`;
+    }
+    return `병사 ${mission.alliesRemaining}명 집결 완료 · 청록색 휴식처 게이트로 탈출하세요.`;
   }
   if (mission.strategy === "fighting") {
-    return "붉은 타격 지점을 보고 피하세요. 병사들은 돌진을 멈추지 않습니다.";
+    return "붉은 타격 지점을 보고 피하세요. 바위문이 닫힌 채 보스를 쓰러뜨리면 출구가 막힙니다. X로 공격 명령을 철회할 수 있습니다.";
   }
   if (mission.strategy === "stealth-selecting")
     return "희생시킬 병사 2명을 직접 선택한 뒤 돌진시키세요.";
   if (mission.strategy === "stealth-charging")
     return "선택한 두 병사가 외눈박이에게 돌진하고 있습니다.";
-  return "병사들은 대열을 유지하며 당신의 선택을 기다립니다.";
+  if (mission.strategy === "observing") {
+    return "외눈박이가 바위문을 직접 열러 갑니다. 양은 밖과 안을 오가며 문은 반복해서 열리고 닫힙니다.";
+  }
+  return mission.flockDirection === "in"
+    ? "양이 밖에 있습니다. 잠시 후 바위문을 다시 열어 양을 들여보냅니다."
+    : "양이 안에 있습니다. 잠시 후 바위문을 다시 열어 양을 내보냅니다.";
 }
 
 export function MissionFailureOverlay() {
@@ -259,7 +362,11 @@ export function MissionFailureOverlay() {
         <p>
           {result === "failure-spotted"
             ? "외눈박이의 손에 붙잡혀 단 한 번의 공격으로 사망했습니다."
-            : "5분 안에 바위문을 통과하지 못했습니다."}
+            : result === "failure-too-few-survivors"
+              ? "탈출한 병사가 6명 미만이라 임무에 실패했습니다."
+              : result === "failure-gate-sealed"
+                ? "바위문이 닫힌 채 외눈박이가 쓰러져 출구가 영영 막혔습니다."
+                : "5분 안에 바위문을 통과하지 못했습니다."}
         </p>
         <strong>휴식처로 자동 귀환했습니다.</strong>
       </div>

@@ -100,7 +100,10 @@ export function GameScreen() {
         <span>Z 회수</span>
         <span>포탈 위 W</span>
         {zone === "battle" && floor === 5 ? (
-          <span>전략 버튼 · 희생자 선택</span>
+          <>
+            <span>G 밀치기·잠든 눈 타격</span>
+            <span>N 임무 상세 정보</span>
+          </>
         ) : null}
         <span>K 스킬 · I 가방 · P 상태</span>
       </div>

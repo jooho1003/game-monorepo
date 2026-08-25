@@ -22,3 +22,6 @@ build/
 *.log
 *.exe
 .vercel
+
+# playwright mcp session output
+.playwright-mcp/

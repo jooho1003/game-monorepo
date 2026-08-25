@@ -17,9 +17,15 @@ export const CAVE_WORLD_WIDTH = 4200;
 export const CAVE_WORLD_HEIGHT = 1600;
 export const CAVE_PLAYER_SPAWN: CavePoint = { x: 390, y: 800 };
 export const CYCLOPS_POSITION: CavePoint = { x: 2160, y: 800 };
+/** Centre of the four-column arena — where the Cyclops always beds down. */
+export const CYCLOPS_SLEEP_POSITION: CavePoint = { x: 1568, y: 780 };
 export const CYCLOPS_FACING_ANGLE = Math.PI;
 export const CYCLOPS_VIEW_DISTANCE = 720;
 export const CYCLOPS_VIEW_HALF_ANGLE = Math.PI / 5.2;
+export const CYCLOPS_GATE_GUARD_RANGE = 680;
+export const CYCLOPS_BLINDED_GUARD_RANGE = 190;
+export const CYCLOPS_GATE_STRIKE_RADIUS = 118;
+export const CYCLOPS_BLINDED_STRIKE_RADIUS = 48;
 export const PLAYER_DISPLAY_SIZE = 84;
 export const CYCLOPS_DISPLAY_SIZE = PLAYER_DISPLAY_SIZE * 6;
 export const CAVE_GATE_POSITION: CavePoint = { x: 2490, y: 800 };
@@ -54,8 +60,11 @@ export const CAVE_OBSTACLES: readonly CaveRectangle[] = [
   { x: 870, y: 455, width: 150, height: 145 },
   { x: 880, y: 1180, width: 230, height: 120 },
   { x: 1320, y: 220, width: 160, height: 110 },
-  { x: 1290, y: 720, width: 105, height: 190 },
-  { x: 1680, y: 665, width: 105, height: 190 },
+  // Four arena columns mapped to the visible column bases in the map image.
+  { x: 1290, y: 392, width: 100, height: 188 },
+  { x: 1290, y: 842, width: 112, height: 198 },
+  { x: 1746, y: 392, width: 108, height: 192 },
+  { x: 1754, y: 842, width: 116, height: 202 },
   { x: 1390, y: 1260, width: 240, height: 105 },
   { x: 1740, y: 330, width: 170, height: 120 },
   { x: 1780, y: 1130, width: 180, height: 130 },
@@ -83,6 +92,61 @@ export const CAVE_STRUCTURE_COLLIDERS: readonly CaveRectangle[] = [
   { x: 3500, y: 1260, width: 180, height: 130 },
 ] as const;
 
+export interface CyclopsGuardAttackProfile {
+  detectionRange: number;
+  strikeRadius: number;
+  warningMs: number;
+  cooldownMs: number;
+}
+
+export function cyclopsGuardAttackProfile(
+  blinded: boolean,
+): CyclopsGuardAttackProfile {
+  return blinded
+    ? {
+        detectionRange: CYCLOPS_BLINDED_GUARD_RANGE,
+        strikeRadius: CYCLOPS_BLINDED_STRIKE_RADIUS,
+        warningMs: 1_250,
+        cooldownMs: 3_400,
+      }
+    : {
+        detectionRange: CYCLOPS_GATE_GUARD_RANGE,
+        strikeRadius: CYCLOPS_GATE_STRIKE_RADIUS,
+        warningMs: 640,
+        cooldownMs: 1_150,
+      };
+}
+
+export function isPointInCyclopsGuardRange(
+  point: CavePoint,
+  cyclopsPosition: CavePoint,
+  blinded: boolean,
+): boolean {
+  return (
+    Math.hypot(
+      point.x - cyclopsPosition.x,
+      point.y - cyclopsPosition.y,
+    ) <= cyclopsGuardAttackProfile(blinded).detectionRange
+  );
+}
+
+export function missionShoveTarget(
+  origin: CavePoint,
+  actor: CavePoint,
+  facingAngle: number,
+  distance = 104,
+): CavePoint {
+  const dx = actor.x - origin.x;
+  const dy = actor.y - origin.y;
+  const length = Math.hypot(dx, dy);
+  const normalX = length > 0 ? dx / length : Math.cos(facingAngle);
+  const normalY = length > 0 ? dy / length : Math.sin(facingAngle);
+  return {
+    x: actor.x + normalX * distance,
+    y: actor.y + normalY * distance,
+  };
+}
+
 export const ALLY_SPAWNS: readonly CavePoint[] = Array.from(
   { length: 15 },
   (_, index) => {
@@ -97,8 +161,8 @@ export const ALLY_SPAWNS: readonly CavePoint[] = Array.from(
 export const SHEEP_INSIDE_SPAWNS: readonly CavePoint[] = Array.from(
   { length: 20 },
   (_, index) => ({
-    x: 1230 + (index % 5) * 126 + (Math.floor(index / 5) % 2) * 28,
-    y: 510 + Math.floor(index / 5) * 132,
+    x: 1050 + (index % 5) * 100 + (Math.floor(index / 5) % 2) * 18,
+    y: 590 + Math.floor(index / 5) * 75,
   }),
 );
 
@@ -106,7 +170,7 @@ export const SHEEP_OUTSIDE_SPAWNS: readonly CavePoint[] = Array.from(
   { length: 20 },
   (_, index) => ({
     x: 3020 + (index % 5) * 112 + (Math.floor(index / 5) % 2) * 30,
-    y: 555 + Math.floor(index / 5) * 145,
+    y: 660 + Math.floor(index / 5) * 145,
   }),
 );
 
@@ -126,6 +190,8 @@ export function movementAvoidanceCandidates(
     (-side * Math.PI) / 4,
     (side * Math.PI) / 2,
     (-side * Math.PI) / 2,
+    (side * Math.PI * 3) / 4,
+    (-side * Math.PI * 3) / 4,
   ];
   return offsets.map((offset) => ({
     x: normalizedX * Math.cos(offset) - normalizedY * Math.sin(offset),
@@ -197,6 +263,27 @@ export function sheepYieldTarget(
     x: sheep.x + normalX * 34 - normalY * distance * side,
     y: sheep.y + normalY * 34 + normalX * distance * side,
   };
+}
+
+export function sheepTransitTarget(
+  sheep: CavePoint,
+  destination: CavePoint,
+  index: number,
+  direction: "out" | "in" = "out",
+): CavePoint {
+  const passageY = 670 + (index % 5) * 34;
+  if (direction === "out") {
+    if (sheep.x < 1638) return { x: 1650, y: passageY };
+    if (sheep.x < 2038) return { x: 2050, y: passageY };
+    if (sheep.x < 2308) return { x: 2320, y: passageY };
+    if (sheep.x < 2748) return { x: 2760, y: passageY };
+    return destination;
+  }
+  if (sheep.x > 2762) return { x: 2750, y: passageY };
+  if (sheep.x > 2322) return { x: 2310, y: passageY };
+  if (sheep.x > 2052) return { x: 2040, y: passageY };
+  if (sheep.x > 1652) return { x: 1640, y: passageY };
+  return destination;
 }
 
 function normalizeAngle(angle: number): number {
