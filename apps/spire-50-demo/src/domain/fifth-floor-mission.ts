@@ -1,6 +1,10 @@
 export const FIFTH_FLOOR_MISSION_DURATION_MS = 300_000;
-export const CYCLOPS_WATCH_DURATION_MS = 6_000;
+export const CYCLOPS_WATCH_DURATION_MS = 15_000;
 export const CYCLOPS_SLEEP_DURATION_MS = 15_000;
+/**
+ * The rock stays up for a flat thirty seconds. Nothing shortens it — not a
+ * flock that finished crossing early, not an empty doorway.
+ */
 export const CYCLOPS_GATE_OPEN_DURATION_MS = 30_000;
 export const FIFTH_FLOOR_ALLY_COUNT = 15;
 export const FIFTH_FLOOR_SHEEP_COUNT = 20;
@@ -392,26 +396,18 @@ export function advanceFifthFloorMission(
       continue;
     }
 
-    if (
-      current.phase === "gate-open" &&
-      current.strategy === "stealth" &&
-      current.bossHp > 0
-    ) {
-      current = {
-        ...current,
-        phase: "watching",
-        phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
-        strategy: "pending",
-        weakPoint: current.weakPoint === "blinded" ? "blinded" : "dormant",
-        weakPointRemainingMs: 0,
-      };
-      events.push({ type: "phase-changed", phase: "watching" });
+    // Only the Cyclops can move the rock, so a downed boss leaves the doorway
+    // open for good.
+    if (current.bossHp <= 0) {
+      current = { ...current, phaseRemainingMs: 0 };
       continue;
     }
 
-    // The physical walkers decide when the gate can close. A timer must never
-    // shut the rock on a sheep that is still crossing the doorway.
-    current = { ...current, phaseRemainingMs: 0 };
+    // Thirty seconds up: the rock comes down on schedule, whatever the flock
+    // has or has not finished doing.
+    const transit = completeFifthFloorFlockTransit(current);
+    current = transit.state;
+    events.push(...transit.events);
     continue;
   }
 
@@ -514,6 +510,7 @@ export function loseFifthFloorAllies(
   const lost = Math.max(0, Math.min(state.alliesRemaining, Math.trunc(count)));
   if (lost === 0) return { state, events: [] };
   const activeSoldierIds = state.activeSoldierIds.slice(0, -lost);
+  const lostIds = state.activeSoldierIds.slice(-lost);
   const alliesRemaining = activeSoldierIds.length;
   const digested = digestFallenSoldiers(
     {
@@ -526,6 +523,7 @@ export function loseFifthFloorAllies(
       alliesAtBeach: Math.min(state.alliesAtBeach, alliesRemaining),
     },
     lost,
+    { lostIds, designatedIds: state.selectedSacrificeIds },
   );
   return {
     state: digested.state,
@@ -556,6 +554,7 @@ export function loseFifthFloorSoldiers(
       alliesAtBeach: Math.min(state.alliesAtBeach, activeSoldierIds.length),
     },
     lostIds.size,
+    { lostIds: [...lostIds], designatedIds: state.selectedSacrificeIds },
   );
   return {
     state: digested.state,
@@ -568,6 +567,7 @@ export function loseFifthFloorSoldiers(
 function digestFallenSoldiers(
   state: FifthFloorMissionState,
   eaten: number,
+  meal?: { lostIds: readonly number[]; designatedIds: readonly number[] },
 ): FifthFloorMissionResult {
   const soldiersEaten = state.soldiersEaten + eaten;
   if (
@@ -579,7 +579,16 @@ function digestFallenSoldiers(
   }
   const events: FifthFloorMissionEvent[] = [];
   let next: FifthFloorMissionState = { ...state, soldiersEaten };
-  if (
+  // The boss now hunts the marked pair on sight, so the meal it finishes is
+  // usually the designated one. That is the sacrifice succeeding, not a reset.
+  const designatedIds = meal?.designatedIds ?? [];
+  const sacrificeFulfilled =
+    designatedIds.length === CYCLOPS_MEAL_SIZE &&
+    designatedIds.every((id) => meal!.lostIds.includes(id));
+  if (sacrificeFulfilled) {
+    next = { ...next, strategy: "stealth", selectedSacrificeIds: [] };
+    events.push({ type: "allies-sacrificed", soldierIds: designatedIds });
+  } else if (
     next.strategy === "stealth-selecting" ||
     next.strategy === "stealth-charging"
   ) {

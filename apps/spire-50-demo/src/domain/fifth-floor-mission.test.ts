@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CYCLOPS_GATE_OPEN_DURATION_MS,
   CYCLOPS_SLEEP_DURATION_MS,
   CYCLOPS_WATCH_DURATION_MS,
   FIFTH_FLOOR_MIN_ESCAPE_ALLIES,
@@ -485,6 +486,72 @@ describe("fifth-floor cyclops mission", () => {
     expect(completeFifthFloorFlockTransit(downed.state).state).toBe(
       downed.state,
     );
+
+    // ...and the thirty-second timer cannot shut it either.
+    const waited = advanceFifthFloorMission(
+      downed.state,
+      CYCLOPS_GATE_OPEN_DURATION_MS * 2,
+    ).state;
+    expect(waited).toMatchObject({ phase: "gate-open", bossHp: 0 });
+  });
+
+  it("holds the rock up for a flat thirty seconds and then closes it", () => {
+    const gateOpen = advanceFifthFloorMission(
+      createFifthFloorMission(),
+      CYCLOPS_WATCH_DURATION_MS,
+    ).state;
+    expect(gateOpen).toMatchObject({
+      phase: "gate-open",
+      phaseRemainingMs: CYCLOPS_GATE_OPEN_DURATION_MS,
+    });
+
+    const almost = advanceFifthFloorMission(
+      gateOpen,
+      CYCLOPS_GATE_OPEN_DURATION_MS - 1,
+    );
+    expect(almost.state).toMatchObject({
+      phase: "gate-open",
+      phaseRemainingMs: 1,
+    });
+    expect(almost.events).toEqual([]);
+
+    const closed = advanceFifthFloorMission(almost.state, 1);
+    expect(closed.state).toMatchObject({
+      phase: "watching",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      flockLocation: "outside",
+      flockDirection: "in",
+      strategy: "pending",
+      cycle: 2,
+    });
+    expect(closed.events).toContainEqual({
+      type: "flock-moved",
+      location: "outside",
+      nextDirection: "in",
+    });
+  });
+
+  it("counts the designated pair being eaten as the sacrifice landing", () => {
+    let charging = chooseFifthFloorStrategy(prepareTactics(), true).state;
+    charging = toggleFifthFloorSacrifice(charging, 2).state;
+    charging = toggleFifthFloorSacrifice(charging, 4).state;
+    charging = commandFifthFloorSacrificeCharge(charging).state;
+
+    const eaten = loseFifthFloorSoldiers(charging, [2, 4]);
+    expect(eaten.state).toMatchObject({
+      phase: "sleeping",
+      strategy: "stealth",
+      selectedSacrificeIds: [],
+      weakPoint: "primed",
+      alliesRemaining: 13,
+    });
+    expect(eaten.events).toContainEqual({
+      type: "allies-sacrificed",
+      soldierIds: [2, 4],
+    });
+    expect(
+      eaten.events.some((event) => event.type === "sacrifice-reset"),
+    ).toBe(false);
   });
 
   it("revokes a fight or a half-picked sacrifice back to pending with X", () => {

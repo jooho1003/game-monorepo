@@ -5,7 +5,6 @@ import {
   advanceFifthFloorMission,
   chooseFifthFloorStrategy,
   commandFifthFloorSacrificeCharge,
-  completeFifthFloorFlockTransit,
   completeFifthFloorSacrifice,
   createFifthFloorMission,
   escapeFifthFloorMission,
@@ -222,6 +221,13 @@ const MISSION_SHEEP_FRAME_DURATION = 250;
 const MISSION_SHOVE_RANGE = 118;
 const MISSION_SHOVE_DISTANCE = 112;
 const MISSION_SHOVE_COOLDOWN_MS = 360;
+/** How long before the rock drops the stall watchdog starts nudging sheep. */
+const SHEEP_TRANSIT_WATCHDOG_WINDOW_MS = 8_000;
+/**
+ * A pierced eye buys the squad ten seconds: the Cyclops reels in place and
+ * nobody on the field throws a punch until the hold expires.
+ */
+const CYCLOPS_EYE_HIT_HOLD_MS = 10_000;
 const GAME_FONT = '"Pretendard UI", "Noto Sans KR", sans-serif';
 
 const EIGHT_DIRECTION_SHEET_ORDER: readonly PlayerDirection[] = [
@@ -360,6 +366,7 @@ export class PlayScene extends Phaser.Scene {
   private cyclopsPatrolIndex = 1;
   private cyclopsStrike?: CyclopsStrike;
   private cyclopsNextStrikeAt = 0;
+  private missionAttackHoldUntil = Number.NEGATIVE_INFINITY;
   private cyclopsAggroActive = false;
   private cyclopsAction: CyclopsAction = "idle";
   private caveGate?: Phaser.GameObjects.Container;
@@ -708,6 +715,7 @@ export class PlayScene extends Phaser.Scene {
     this.cyclopsPatrolIndex = 1;
     this.cyclopsStrike = undefined;
     this.cyclopsNextStrikeAt = 0;
+    this.missionAttackHoldUntil = Number.NEGATIVE_INFINITY;
     this.cyclopsAggroActive = false;
     this.cyclopsAction = "idle";
     this.caveGate = undefined;
@@ -2020,33 +2028,8 @@ export class PlayScene extends Phaser.Scene {
       sheepAtBeach,
     );
     this.fifthFloorMission = sheepProgress.state;
-    // The gate may only close after every sheep has fully cleared the doorway:
-    // outbound means past the beach line, inbound means back past the gate slab.
-    const flockTransitComplete =
-      this.fifthFloorMission.flockDirection === "out"
-        ? this.missionSheep.every(
-            (sheep) =>
-              !sheep.node.active || sheep.node.x >= BEACH_REGION.x,
-          )
-        : this.missionSheep.every(
-            (sheep) =>
-              !sheep.node.active ||
-              sheep.node.x <= CAVE_GATE_COLLIDER.x - 40,
-          );
-    if (
-      this.fifthFloorMission.phase === "gate-open" &&
-      this.fifthFloorMission.bossHp > 0 &&
-      this.caveGateWalkable &&
-      flockTransitComplete &&
-      // Mid-combat the boss never breaks off to shut the rock.
-      !this.isCyclopsEngagedInCombat()
-    ) {
-      const flockArrived = completeFifthFloorFlockTransit(
-        this.fifthFloorMission,
-      );
-      this.fifthFloorMission = flockArrived.state;
-      this.handleFifthFloorEvents(flockArrived.events);
-    }
+    // The rock is on a flat thirty-second timer now: neither a finished flock
+    // nor a running fight moves the closing time.
     this.updateCyclopsActor(time, delta);
     this.updateCyclopsStrike(time);
     this.updateCyclopsVision();
@@ -2125,6 +2108,13 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
 
+    if (time < this.missionAttackHoldUntil) {
+      // Blinded and reeling: the Cyclops holds its ground for the whole hold.
+      this.cyclopsAction = "idle";
+      this.renderCyclopsAction(time);
+      return;
+    }
+
     const fighting = this.fifthFloorMission.strategy === "fighting";
     const sacrificeCharging =
       this.fifthFloorMission.strategy === "stealth-charging";
@@ -2137,11 +2127,28 @@ export class PlayScene extends Phaser.Scene {
         this.cyclopsFacingAngle,
       );
     let target = CYCLOPS_PATROL_POINTS[this.cyclopsPatrolIndex]!;
-    if (sacrificeCharging) {
-      const selected = this.missionAllies.find((soldier) =>
+    const markedSoldiers = this.missionAllies.filter(
+      (soldier) =>
+        soldier.node.active &&
         this.fifthFloorMission!.selectedSacrificeIds.includes(soldier.index),
-      );
-      if (selected) target = { x: selected.node.x, y: selected.node.y };
+    );
+    if (markedSoldiers.length > 0) {
+      // Marked meat outranks everything: the boss walks down the nearest of
+      // the two chosen soldiers even while the player is in plain sight.
+      let nearest = markedSoldiers[0]!;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const soldier of markedSoldiers) {
+        const distance = Phaser.Math.Distance.Between(
+          this.cyclopsBoss.x,
+          this.cyclopsBoss.y,
+          soldier.node.x,
+          soldier.node.y,
+        );
+        if (distance >= nearestDistance) continue;
+        nearest = soldier;
+        nearestDistance = distance;
+      }
+      target = { x: nearest.node.x, y: nearest.node.y };
     } else if (fighting || seesPlayer || this.cyclopsAggroActive) {
       target = { x: this.player.x, y: this.player.y };
     } else if (
@@ -2165,9 +2172,10 @@ export class PlayScene extends Phaser.Scene {
       vector.normalize();
       const speed = fighting
         ? CYCLOPS_FIGHT_SPEED
-        : sacrificeCharging
-          ? CYCLOPS_CHASE_SPEED
-        : seesPlayer || this.cyclopsAggroActive
+        : sacrificeCharging ||
+            markedSoldiers.length > 0 ||
+            seesPlayer ||
+            this.cyclopsAggroActive
           ? CYCLOPS_CHASE_SPEED
           : CYCLOPS_PATROL_SPEED;
       const distance = (speed * delta) / 1_000;
@@ -2326,7 +2334,7 @@ export class PlayScene extends Phaser.Scene {
       } else if (fighting && bossDistance <= 225) {
         targetX = soldier.node.x;
         targetY = soldier.node.y;
-        if (time >= soldier.nextAttackAt) {
+        if (time >= soldier.nextAttackAt && time >= this.missionAttackHoldUntil) {
           soldier.nextAttackAt = time + 1_350 + (soldier.index % 4) * 90;
           this.playMissionSoldierAttack(soldier, bossPoint);
         }
@@ -2381,14 +2389,14 @@ export class PlayScene extends Phaser.Scene {
         sheep.node.setTexture("sheep-walk-8d", `${sheep.direction}-0`);
         continue;
       }
-      // Anti-deadlock watchdog: the gate stays open until every sheep clears
-      // the doorway, so one sheep wedged against an actor forever would hold
-      // the whole mission hostage. Once the gate timer is overdue, a sheep
-      // that has made no progress for five seconds is nudged straight to its
-      // side of the door.
+      // Stall watchdog: the rock now comes down on a fixed timer, so a sheep
+      // wedged against an actor would simply be left behind. In the closing
+      // stretch of the window a sheep that has made no progress for five
+      // seconds is nudged straight to its side of the door.
       if (
         flockTransit &&
-        (this.fifthFloorMission?.phaseRemainingMs ?? 1) <= 0
+        (this.fifthFloorMission?.phaseRemainingMs ?? Number.POSITIVE_INFINITY) <=
+          SHEEP_TRANSIT_WATCHDOG_WINDOW_MS
       ) {
         const destination =
           this.fifthFloorMission?.flockDirection === "in"
@@ -2977,8 +2985,8 @@ export class PlayScene extends Phaser.Scene {
       if (event.type === "flock-moved") {
         this.showBossCallout(
           event.location === "outside"
-            ? "양 20마리 외출 완료 · 잠시 후 다시 들여보냅니다"
-            : "양 20마리 귀환 완료 · 잠시 후 다시 내보냅니다",
+            ? "30초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 들여보냅니다"
+            : "30초 경과 · 바위문이 닫힙니다 · 잠시 후 양을 다시 내보냅니다",
           "#ffd27a",
         );
         continue;
@@ -3039,8 +3047,14 @@ export class PlayScene extends Phaser.Scene {
       }
       if (event.type === "vision-obscured") {
         this.cancelCyclopsStrike();
+        this.cyclopsAggroActive = false;
+        this.missionAttackHoldUntil = this.time.now + CYCLOPS_EYE_HIT_HOLD_MS;
+        this.cyclopsNextStrikeAt = Math.max(
+          this.cyclopsNextStrikeAt,
+          this.missionAttackHoldUntil,
+        );
         this.showBossCallout(
-          "눈 타격 성공 · 시야와 공격 범위가 영구히 줄어듭니다",
+          "눈 타격 성공 · 10초간 전투 정지 · 시야와 공격 범위가 영구히 줄어듭니다",
           "#8ce6d0",
         );
         this.cameras.main.flash(130, 115, 225, 205, false);
@@ -3145,6 +3159,7 @@ export class PlayScene extends Phaser.Scene {
     if (
       time < this.cyclopsNextStrikeAt ||
       time < this.bossGateActionEndsAt ||
+      time < this.missionAttackHoldUntil ||
       (!guardingGate && !guardingCave && !guardingBody)
     ) {
       return;
@@ -3161,21 +3176,18 @@ export class PlayScene extends Phaser.Scene {
           cooldownMs: CYCLOPS_STRIKE_COOLDOWN_MS,
         };
 
-    const sacrificeIds = new Set(
-      this.fifthFloorMission.strategy === "stealth-charging"
-        ? this.fifthFloorMission.selectedSacrificeIds
-        : [],
-    );
-    const candidates = [
-      { x: this.player.x, y: this.player.y },
+    // Once two soldiers are marked for sacrifice the Cyclops wants those two
+    // above anyone else — they are hunted first and only a fully out-of-reach
+    // pair lets it fall back on the rest of the squad.
+    const sacrificeIds = new Set(this.fifthFloorMission.selectedSacrificeIds);
+    const candidates: (CavePoint & { sacrifice: boolean })[] = [
+      { x: this.player.x, y: this.player.y, sacrifice: false },
       ...this.missionAllies
-        .filter(
-          (soldier) =>
-            soldier.node.active && !sacrificeIds.has(soldier.index),
-        )
+        .filter((soldier) => soldier.node.active)
         .map((soldier) => ({
           x: soldier.node.x,
           y: soldier.node.y,
+          sacrifice: sacrificeIds.has(soldier.index),
         })),
     ].filter((point) => {
       if (guardingGate) {
@@ -3203,9 +3215,14 @@ export class PlayScene extends Phaser.Scene {
         )
       );
     });
+    const priorityCandidates = candidates.some(
+      (candidate) => candidate.sacrifice,
+    )
+      ? candidates.filter((candidate) => candidate.sacrifice)
+      : candidates;
     let target: CavePoint | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const candidate of candidates) {
+    for (const candidate of priorityCandidates) {
       const distance = Phaser.Math.Distance.Between(
         this.cyclopsBoss.x,
         this.cyclopsBoss.y,
@@ -3228,29 +3245,14 @@ export class PlayScene extends Phaser.Scene {
 
   // Only an actual swing freezes the phase countdown: while the boss winds up
   // or lands a sweep the timetable pauses, but chasing or a standing fight
-  // lets the clock keep running.
+  // lets the clock keep running. The open gate is the one exception — its
+  // thirty seconds are exact, so nothing at all stretches them.
   private isCyclopsAttacking(): boolean {
     if (!this.fifthFloorMission || !isCyclopsAwake(this.fifthFloorMission)) {
       return false;
     }
+    if (this.fifthFloorMission.phase === "gate-open") return false;
     return this.cyclopsStrike !== undefined;
-  }
-
-  // "In combat" gates the physical door work: a striking, chasing, or openly
-  // fought Cyclops never breaks off mid-fight to walk over and shut the rock.
-  private isCyclopsEngagedInCombat(): boolean {
-    if (!this.fifthFloorMission || !isCyclopsAwake(this.fifthFloorMission)) {
-      return false;
-    }
-    return (
-      this.cyclopsStrike !== undefined ||
-      this.cyclopsAggroActive ||
-      // An all-out fight only rages while the boss patrols the cave floor;
-      // soldiers charge (and the boss chases) exclusively in the watching
-      // phase, so a gate-open lull with everyone at a distance is not combat.
-      (this.fifthFloorMission.strategy === "fighting" &&
-        this.fifthFloorMission.phase === "watching")
-    );
   }
 
   private cancelCyclopsStrike(): void {
@@ -3327,15 +3329,11 @@ export class PlayScene extends Phaser.Scene {
     );
     // The chosen sacrifices belong to the meal script, not the sweep — losing
     // one here would leave a ritual that can never complete.
-    const protectedIds = new Set(
-      this.fifthFloorMission.strategy === "stealth-charging"
-        ? this.fifthFloorMission.selectedSacrificeIds
-        : [],
-    );
+    // Nobody is shielded any more: a soldier marked for sacrifice is exactly
+    // who the boss was aiming at.
     const caught = this.missionAllies.filter(
       (soldier) =>
         soldier.node.active &&
-        !protectedIds.has(soldier.index) &&
         isPointInCyclopsStrike(soldier.node, strikeTarget, strike.radius),
     );
 

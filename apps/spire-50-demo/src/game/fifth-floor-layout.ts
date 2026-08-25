@@ -17,15 +17,15 @@ export const CAVE_WORLD_WIDTH = 4200;
 export const CAVE_WORLD_HEIGHT = 1600;
 export const CAVE_PLAYER_SPAWN: CavePoint = { x: 390, y: 800 };
 export const CYCLOPS_POSITION: CavePoint = { x: 2160, y: 800 };
-/** Centre of the four-column arena — where the Cyclops always beds down. */
+/** Centre of the open arena — where the Cyclops always beds down. */
 export const CYCLOPS_SLEEP_POSITION: CavePoint = { x: 1568, y: 780 };
 export const CYCLOPS_FACING_ANGLE = Math.PI;
 export const CYCLOPS_VIEW_DISTANCE = 720;
 export const CYCLOPS_VIEW_HALF_ANGLE = Math.PI / 5.2;
 export const CYCLOPS_GATE_GUARD_RANGE = 680;
-export const CYCLOPS_BLINDED_GUARD_RANGE = 190;
+export const CYCLOPS_BLINDED_GUARD_RANGE = 108;
 export const CYCLOPS_GATE_STRIKE_RADIUS = 118;
-export const CYCLOPS_BLINDED_STRIKE_RADIUS = 48;
+export const CYCLOPS_BLINDED_STRIKE_RADIUS = 30;
 export const PLAYER_DISPLAY_SIZE = 84;
 export const CYCLOPS_DISPLAY_SIZE = PLAYER_DISPLAY_SIZE * 6;
 export const CAVE_GATE_POSITION: CavePoint = { x: 2490, y: 800 };
@@ -55,21 +55,17 @@ export const CAVE_MOVEMENT_BOUNDS: CaveRectangle = {
   height: 1376,
 };
 
+// The arena centre is deliberately empty. The four columns and the rocks
+// flanking the gate approach used to sit right across the flock's route and
+// wedged sheep against them, so only wall-hugging cover remains.
 export const CAVE_OBSTACLES: readonly CaveRectangle[] = [
   { x: 700, y: 250, width: 190, height: 120 },
   { x: 870, y: 455, width: 150, height: 145 },
   { x: 880, y: 1180, width: 230, height: 120 },
   { x: 1320, y: 220, width: 160, height: 110 },
-  // Four arena columns mapped to the visible column bases in the map image.
-  { x: 1290, y: 392, width: 100, height: 188 },
-  { x: 1290, y: 842, width: 112, height: 198 },
-  { x: 1746, y: 392, width: 108, height: 192 },
-  { x: 1754, y: 842, width: 116, height: 202 },
   { x: 1390, y: 1260, width: 240, height: 105 },
   { x: 1740, y: 330, width: 170, height: 120 },
   { x: 1780, y: 1130, width: 180, height: 130 },
-  { x: 2050, y: 505, width: 145, height: 150 },
-  { x: 2020, y: 1010, width: 155, height: 155 },
 ] as const;
 
 /** Solid masonry around the only cave-to-beach opening. */

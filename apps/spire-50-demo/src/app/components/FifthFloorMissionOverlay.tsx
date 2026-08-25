@@ -310,8 +310,8 @@ function getMissionHint(
   if (mission.phase === "gate-open") {
     if (mission.bossHp > 0) {
       return mission.flockDirection === "out"
-        ? "양이 모두 나갈 때까지 바위문이 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 잡으러 옵니다."
-        : "양을 모두 들여보내는 동안 바위문이 다시 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 공격합니다.";
+        ? "바위문이 30초 동안 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 잡으러 옵니다."
+        : "양을 들여보내는 동안 바위문이 30초 동안 열립니다. 지금 함께 나갈 수 있지만 보스는 계속 공격합니다.";
     }
     if (!mission.reachedBeach) {
       return mission.bossHp <= 0
