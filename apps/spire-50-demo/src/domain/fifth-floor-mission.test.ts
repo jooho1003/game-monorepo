@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CYCLOPS_FIRST_WATCH_DURATION_MS,
   CYCLOPS_GATE_OPEN_DURATION_MS,
   CYCLOPS_SLEEP_DURATION_MS,
   CYCLOPS_WATCH_DURATION_MS,
@@ -52,7 +53,7 @@ describe("fifth-floor cyclops mission", () => {
       status: "active",
       remainingMs: 300_000,
       phase: "watching",
-      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      phaseRemainingMs: CYCLOPS_FIRST_WATCH_DURATION_MS,
       alliesRemaining: 15,
       sheepCount: 20,
       sheepAtBeach: 0,
@@ -292,14 +293,29 @@ describe("fifth-floor cyclops mission", () => {
     });
   });
 
-  it("blinds the boss forever without touching the gate cycle when the sleeping eye is pierced", () => {
+  it("wakes the sleeping boss into the hunt when struck anywhere but the eye", () => {
     const sleeping = prepareStealthSacrifice();
     const bodyHit = hitCyclopsWithBasicAttack(sleeping, 20, false);
     expect(bodyHit.state).toMatchObject({
-      phase: "sleeping",
-      weakPoint: "primed",
+      phase: "watching",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      strategy: "pending",
+      weakPoint: "dormant",
       bossHp: 1_180,
     });
+    expect(bodyHit.events).toContainEqual({ type: "boss-roared" });
+    expect(bodyHit.events).toContainEqual({
+      type: "phase-changed",
+      phase: "watching",
+    });
+
+    const skillHit = hitCyclopsWithSkill(sleeping, 20);
+    expect(skillHit.state).toMatchObject({ phase: "watching", bossHp: 1_180 });
+    expect(skillHit.events).toContainEqual({ type: "boss-roared" });
+  });
+
+  it("blinds the boss forever without touching the gate cycle when the sleeping eye is pierced", () => {
+    const sleeping = prepareStealthSacrifice();
 
     const blinded = hitCyclopsWithBasicAttack(sleeping, 20, true);
     expect(blinded.state).toMatchObject({
@@ -392,7 +408,7 @@ describe("fifth-floor cyclops mission", () => {
     }).state;
     expect(held).toMatchObject({
       phase: "watching",
-      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      phaseRemainingMs: CYCLOPS_FIRST_WATCH_DURATION_MS,
       phaseTimerHeld: true,
       remainingMs: FIFTH_FLOOR_MISSION_DURATION_MS - 4_000,
     });
@@ -400,7 +416,7 @@ describe("fifth-floor cyclops mission", () => {
     const resumed = advanceFifthFloorMission(held, 1_000).state;
     expect(resumed).toMatchObject({
       phaseTimerHeld: false,
-      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS - 1_000,
+      phaseRemainingMs: CYCLOPS_FIRST_WATCH_DURATION_MS - 1_000,
     });
 
     const timedOut = advanceFifthFloorMission(
@@ -487,7 +503,7 @@ describe("fifth-floor cyclops mission", () => {
       downed.state,
     );
 
-    // ...and the thirty-second timer cannot shut it either.
+    // ...and the gate timer cannot shut it either.
     const waited = advanceFifthFloorMission(
       downed.state,
       CYCLOPS_GATE_OPEN_DURATION_MS * 2,
@@ -495,10 +511,10 @@ describe("fifth-floor cyclops mission", () => {
     expect(waited).toMatchObject({ phase: "gate-open", bossHp: 0 });
   });
 
-  it("holds the rock up for a flat thirty seconds and then closes it", () => {
+  it("holds the rock up for the flat gate window and then closes it", () => {
     const gateOpen = advanceFifthFloorMission(
       createFifthFloorMission(),
-      CYCLOPS_WATCH_DURATION_MS,
+      CYCLOPS_FIRST_WATCH_DURATION_MS,
     ).state;
     expect(gateOpen).toMatchObject({
       phase: "gate-open",
@@ -552,6 +568,19 @@ describe("fifth-floor cyclops mission", () => {
     expect(
       eaten.events.some((event) => event.type === "sacrifice-reset"),
     ).toBe(false);
+  });
+
+  it("silently dismisses the tactics prompt when stealth is picked after blinding", () => {
+    const sleeping = prepareStealthSacrifice();
+    const blinded = hitCyclopsWithBasicAttack(sleeping, 20, true).state;
+    expect(blinded).toMatchObject({ strategy: "pending", weakPoint: "blinded" });
+
+    const dismissed = chooseFifthFloorStrategy(blinded, true);
+    expect(dismissed.state).toMatchObject({
+      strategy: "observing",
+      selectedSacrificeIds: [],
+    });
+    expect(dismissed.events).toEqual([]);
   });
 
   it("revokes a fight or a half-picked sacrifice back to pending with X", () => {

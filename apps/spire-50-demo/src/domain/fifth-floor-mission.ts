@@ -1,11 +1,13 @@
 export const FIFTH_FLOOR_MISSION_DURATION_MS = 300_000;
 export const CYCLOPS_WATCH_DURATION_MS = 15_000;
+/** The very first countdown is short: the gate opens five seconds after entry. */
+export const CYCLOPS_FIRST_WATCH_DURATION_MS = 5_000;
 export const CYCLOPS_SLEEP_DURATION_MS = 15_000;
 /**
- * The rock stays up for a flat thirty seconds. Nothing shortens it — not a
+ * The rock stays up for a flat twenty seconds. Nothing shortens it — not a
  * flock that finished crossing early, not an empty doorway.
  */
-export const CYCLOPS_GATE_OPEN_DURATION_MS = 30_000;
+export const CYCLOPS_GATE_OPEN_DURATION_MS = 20_000;
 export const FIFTH_FLOOR_ALLY_COUNT = 15;
 export const FIFTH_FLOOR_SHEEP_COUNT = 20;
 export const FIFTH_FLOOR_MIN_ESCAPE_ALLIES = 6;
@@ -88,7 +90,7 @@ export function createFifthFloorMission(): FifthFloorMissionState {
     failureReason: null,
     remainingMs: FIFTH_FLOOR_MISSION_DURATION_MS,
     phase: "watching",
-    phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+    phaseRemainingMs: CYCLOPS_FIRST_WATCH_DURATION_MS,
     phaseTimerHeld: false,
     soldiersEaten: 0,
     alliesRemaining: FIFTH_FLOOR_ALLY_COUNT,
@@ -135,6 +137,15 @@ export function chooseFifthFloorStrategy(
             : state.phaseRemainingMs,
       },
       events: [{ type: "charge-commanded" }],
+    };
+  }
+
+  // Once the eye is pierced there is nothing left to sneak past — picking
+  // stealth simply dismisses the tactics prompt without any further reaction.
+  if (state.weakPoint === "blinded") {
+    return {
+      state: { ...state, strategy: "observing", selectedSacrificeIds: [] },
+      events: [],
     };
   }
 
@@ -643,7 +654,7 @@ export function hitCyclopsWithBasicAttack(
     };
   }
 
-  return damageCyclops(state, damage);
+  return wakeCyclopsIfStruckAsleep(damageCyclops(state, damage));
 }
 
 export function hitCyclopsWithSkill(
@@ -651,7 +662,38 @@ export function hitCyclopsWithSkill(
   damage: number,
 ): FifthFloorMissionResult {
   if (state.status !== "active") return { state, events: [] };
-  return damageCyclops(state, damage);
+  return wakeCyclopsIfStruckAsleep(damageCyclops(state, damage));
+}
+
+// A blow landing anywhere but the primed eye startles a sleeping Cyclops
+// awake: it rises with a roar and goes straight back on the offensive.
+function wakeCyclopsIfStruckAsleep(
+  result: FifthFloorMissionResult,
+): FifthFloorMissionResult {
+  const { state, events } = result;
+  if (
+    state.status !== "active" ||
+    state.phase !== "sleeping" ||
+    state.bossHp <= 0 ||
+    !events.some((event) => event.type === "boss-damaged")
+  ) {
+    return result;
+  }
+  return {
+    state: {
+      ...state,
+      phase: "watching",
+      phaseRemainingMs: CYCLOPS_WATCH_DURATION_MS,
+      strategy: "pending",
+      weakPoint: state.weakPoint === "blinded" ? "blinded" : "dormant",
+      weakPointRemainingMs: 0,
+    },
+    events: [
+      ...events,
+      { type: "boss-roared" },
+      { type: "phase-changed", phase: "watching" },
+    ],
+  };
 }
 
 export function failFifthFloorMission(
