@@ -1,5 +1,15 @@
 import Phaser from "phaser";
-import { playCombatVoice, playSfx } from "../audio/audio-manager.js";
+import {
+  SKILL2_SFX_BY_WEAPON,
+  playCombatVoice,
+  playSfx,
+} from "../audio/audio-manager.js";
+import {
+  SKILL2_COOLDOWN_MS,
+  SKILL2_DEFINITIONS,
+  SKILL2_MANA_COST,
+} from "../config/skills.js";
+import { skill2DamageMultiplier } from "../domain/engine.js";
 import type { WandererRole, WeaponId, ZoneId } from "../domain/model.js";
 import {
   advanceFifthFloorMission,
@@ -38,6 +48,7 @@ import {
   playerActionTextureFrame,
   playerLocomotionTextureFrame,
   playerStanceTextureFrame,
+  type PlayerActionKind,
   type PlayerDirection,
   type PlayerTextureFrame,
 } from "./player-animation.js";
@@ -279,6 +290,14 @@ const SKILL_POSE_DURATIONS: Record<WeaponId, number> = {
   staff: 720,
 };
 
+const SKILL2_ACCENTS: Record<WeaponId, number> = {
+  longsword: 0x8ce6d0,
+  dagger: 0xdf9df3,
+  shield: 0xf0c97b,
+  bow: 0xa9db7e,
+  staff: 0x87b9ff,
+};
+
 const WEAPON_COMBAT: Record<WeaponId, WeaponCombatProfile> = {
   longsword: {
     cooldown: 410,
@@ -322,6 +341,7 @@ export class PlayScene extends Phaser.Scene {
   private aimCursor!: Phaser.GameObjects.Graphics;
   private moveKeys!: MoveKeys;
   private skillKey!: Phaser.Input.Keyboard.Key;
+  private skill2Key!: Phaser.Input.Keyboard.Key;
   private pickupKey!: Phaser.Input.Keyboard.Key;
   private shoveKey!: Phaser.Input.Keyboard.Key;
   private enemies: EnemyActor[] = [];
@@ -330,6 +350,7 @@ export class PlayScene extends Phaser.Scene {
   private ally?: EnemyActor;
   private nextBasicAttackAt = 0;
   private nextSkillAt = 0;
+  private nextSkill2At = 0;
   private nextAllyAttackAt = 0;
   private nextPortalAt = 0;
   private weaponAttackStartedAt = Number.NEGATIVE_INFINITY;
@@ -337,6 +358,7 @@ export class PlayScene extends Phaser.Scene {
   private skillPoseStartedAt = Number.NEGATIVE_INFINITY;
   private skillPoseWeapon?: WeaponId;
   private skillPoseDirection: PlayerDirection = "south";
+  private skillPoseAction: "skill" | "skill2" = "skill";
   private returnPortalCreated = false;
   private transitioning = false;
   private dashEndsAt = Number.NEGATIVE_INFINITY;
@@ -494,6 +516,10 @@ export class PlayScene extends Phaser.Scene {
             `player-skill-${skillWeaponId}-${direction}-${frame}`,
             `/assets/game/world/player-v2/skill/${skillWeaponId}/${direction}-${frame}.png`,
           );
+          this.load.image(
+            `player-skill2-${skillWeaponId}-${direction}-${frame}`,
+            `/assets/game/world/player-v2/skill2/${skillWeaponId}/${direction}-${frame}.png`,
+          );
         }
       }
     }
@@ -508,6 +534,9 @@ export class PlayScene extends Phaser.Scene {
     }) as MoveKeys;
     this.skillKey = this.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.ONE,
+    );
+    this.skill2Key = this.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.TWO,
     );
     this.pickupKey = this.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.Z,
@@ -534,6 +563,8 @@ export class PlayScene extends Phaser.Scene {
           `player-attack-${skillWeaponId}-${direction}-1`,
           `player-skill-${skillWeaponId}-${direction}-0`,
           `player-skill-${skillWeaponId}-${direction}-1`,
+          `player-skill2-${skillWeaponId}-${direction}-0`,
+          `player-skill2-${skillWeaponId}-${direction}-1`,
         ]),
       ]) {
         this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
@@ -676,6 +707,7 @@ export class PlayScene extends Phaser.Scene {
       this.maybeCreateReturnPortal();
     }
     if (this.zone === "battle" && this.skillKey.isDown) this.useSkill(time);
+    if (this.zone === "battle" && this.skill2Key.isDown) this.useSkill2(time);
 
     if (
       this.moveKeys.up.isDown &&
@@ -3857,11 +3889,11 @@ export class PlayScene extends Phaser.Scene {
   private updatePlayerTexture(time: number, moving: boolean): void {
     if (this.isSkillPoseActive(time) && this.skillPoseWeapon) {
       const elapsed = time - this.skillPoseStartedAt;
-      const duration = SKILL_POSE_DURATIONS[this.skillPoseWeapon];
+      const duration = this.skillPoseDuration(this.skillPoseWeapon);
       const frame = elapsed < duration * 0.48 ? 0 : 1;
       this.setPlayerTexture(
         this.directionalActionTexture(
-          "skill",
+          this.skillPoseAction,
           this.skillPoseWeapon,
           this.skillPoseDirection,
           frame,
@@ -3928,7 +3960,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private directionalActionTexture(
-    action: "attack" | "skill",
+    action: PlayerActionKind,
     weaponId: WeaponId,
     direction: PlayerDirection,
     frame: number,
@@ -4019,11 +4051,17 @@ export class PlayScene extends Phaser.Scene {
     );
   }
 
+  private skillPoseDuration(weaponId: WeaponId): number {
+    return this.skillPoseAction === "skill2"
+      ? SKILL2_DEFINITIONS[weaponId].poseDurationMs
+      : SKILL_POSE_DURATIONS[weaponId];
+  }
+
   private isSkillPoseActive(time: number): boolean {
     if (!this.skillPoseWeapon) return false;
     const elapsed = time - this.skillPoseStartedAt;
     return (
-      elapsed >= 0 && elapsed <= SKILL_POSE_DURATIONS[this.skillPoseWeapon]
+      elapsed >= 0 && elapsed <= this.skillPoseDuration(this.skillPoseWeapon)
     );
   }
 
@@ -4178,6 +4216,7 @@ export class PlayScene extends Phaser.Scene {
     const weaponId = snapshot.weapon;
     this.playerDirection = directionFromAngle(angle);
     this.skillPoseDirection = this.playerDirection;
+    this.skillPoseAction = "skill";
     this.setPlayerTexture(
       this.directionalActionTexture("skill", weaponId, this.playerDirection, 0),
     );
@@ -4250,6 +4289,388 @@ export class PlayScene extends Phaser.Scene {
       340,
     );
     this.castStarfall(angle, targetDistance, profile.color);
+  }
+
+  private useSkill2(time: number): void {
+    const snapshot = useGameStore.getState().snapshot;
+    if (time < this.nextSkill2At) return;
+    if (snapshot.skill2Level < 1 || snapshot.mp < SKILL2_MANA_COST) {
+      this.nextSkill2At = time + 300;
+      useGameStore.getState().dispatch({
+        type: "USE_SKILL",
+        manaCost: SKILL2_MANA_COST,
+        skillId: "skill2",
+      });
+      return;
+    }
+    this.nextSkill2At = time + SKILL2_COOLDOWN_MS;
+    useGameStore.getState().dispatch({
+      type: "USE_SKILL",
+      manaCost: SKILL2_MANA_COST,
+      skillId: "skill2",
+    });
+
+    const pointer = this.pointerWorldPoint();
+    const angle = Phaser.Math.Angle.Between(
+      this.player.x,
+      this.player.y,
+      pointer.x,
+      pointer.y,
+    );
+    const weaponId = snapshot.weapon;
+    const definition = SKILL2_DEFINITIONS[weaponId];
+    const damage = Math.round(
+      definition.damage * skill2DamageMultiplier(snapshot.skill2Level),
+    );
+    this.playerDirection = directionFromAngle(angle);
+    this.skillPoseAction = "skill2";
+    this.skillPoseDirection = this.playerDirection;
+    this.setPlayerTexture(
+      this.directionalActionTexture(
+        "skill2",
+        weaponId,
+        this.playerDirection,
+        0,
+      ),
+    );
+    this.skillPoseWeapon = weaponId;
+    this.skillPoseStartedAt = time;
+    this.weaponAttackStartedAt = Number.NEGATIVE_INFINITY;
+    playSfx(SKILL2_SFX_BY_WEAPON[weaponId], { volume: 0.5 });
+    playCombatVoice("skill", weaponId);
+    const profile = WEAPON_COMBAT[weaponId];
+    if (this.isFifthFloor()) {
+      this.handleCyclopsSkillAttack(
+        angle,
+        Math.max(profile.range, 200),
+        damage,
+      );
+    }
+
+    const shape = definition.shape;
+    const accent = SKILL2_ACCENTS[weaponId];
+    if (weaponId === "longsword" && shape.kind === "radial") {
+      this.playSpinningStormEffect(shape.radius, accent);
+      this.damageEnemies(
+        this.player.x,
+        this.player.y,
+        shape.radius,
+        damage,
+        shape.knockback,
+      );
+      return;
+    }
+
+    if (weaponId === "dagger" && shape.kind === "fan") {
+      this.playPhantomFanEffect(angle, shape, accent);
+      for (let index = 0; index < shape.blades; index += 1) {
+        const offset =
+          shape.spread * ((index / (shape.blades - 1)) * 2 - 1);
+        this.damageEnemiesAlongLine(
+          this.player.x,
+          this.player.y,
+          angle + offset,
+          shape.range,
+          shape.width,
+          damage,
+        );
+      }
+      return;
+    }
+
+    if (weaponId === "shield" && shape.kind === "radial") {
+      this.playEarthshatterEffect(shape.radius, accent);
+      this.damageEnemies(
+        this.player.x,
+        this.player.y,
+        shape.radius,
+        damage,
+        shape.knockback,
+      );
+      this.cameras.main.shake(260, 0.009);
+      return;
+    }
+
+    if (weaponId === "bow" && shape.kind === "projectile") {
+      this.launchExplosiveArrow(
+        angle,
+        shape.range,
+        shape.blastRadius,
+        damage,
+        accent,
+      );
+      return;
+    }
+
+    if (shape.kind === "beam") {
+      this.playArcaneBeamEffect(angle, shape.range, shape.width, accent);
+      this.damageEnemiesAlongLine(
+        this.player.x,
+        this.player.y,
+        angle,
+        shape.range,
+        shape.width,
+        damage,
+      );
+    }
+  }
+
+  private playSpinningStormEffect(radius: number, color: number): void {
+    const x = this.player.x;
+    const y = this.player.y;
+    for (const [delay, startAngle] of [
+      [0, 0],
+      [110, Math.PI * 0.66],
+      [220, Math.PI * 1.33],
+    ] as const) {
+      this.time.delayedCall(delay, () => {
+        const arc = this.add.graphics().setPosition(x, y).setDepth(9);
+        arc.lineStyle(12, color, 0.8);
+        arc.beginPath();
+        arc.arc(0, 0, radius * 0.7, startAngle, startAngle + Math.PI * 1.3);
+        arc.strokePath();
+        arc.lineStyle(3, 0xffffff, 0.8);
+        arc.beginPath();
+        arc.arc(0, 0, radius * 0.62, startAngle, startAngle + Math.PI * 1.15);
+        arc.strokePath();
+        this.tweens.add({
+          targets: arc,
+          rotation: Math.PI * 0.9,
+          scale: radius / (radius * 0.7),
+          alpha: 0,
+          duration: 320,
+          ease: "Quad.Out",
+          onComplete: () => arc.destroy(),
+        });
+      });
+    }
+    const ring = this.add
+      .circle(x, y, radius * 0.4, color, 0.1)
+      .setStrokeStyle(6, color, 0.7)
+      .setDepth(8);
+    this.tweens.add({
+      targets: ring,
+      radius,
+      alpha: 0,
+      duration: 420,
+      ease: "Quad.Out",
+      onComplete: () => ring.destroy(),
+    });
+    for (let index = 0; index < 12; index += 1) {
+      const sparkAngle = (index / 12) * Math.PI * 2;
+      const spark = this.add
+        .rectangle(x, y, 13, 3, index % 2 === 0 ? color : 0xf2fff9, 0.9)
+        .setRotation(sparkAngle + Math.PI / 2)
+        .setDepth(10);
+      this.tweens.add({
+        targets: spark,
+        x: x + Math.cos(sparkAngle) * radius,
+        y: y + Math.sin(sparkAngle) * radius,
+        rotation: sparkAngle + Math.PI,
+        alpha: 0,
+        duration: 300 + index * 8,
+        ease: "Quad.Out",
+        onComplete: () => spark.destroy(),
+      });
+    }
+    this.cameras.main.shake(160, 0.005);
+  }
+
+  private playPhantomFanEffect(
+    angle: number,
+    shape: { range: number; spread: number; blades: number },
+    color: number,
+  ): void {
+    const originX = this.player.x;
+    const originY = this.player.y;
+    for (let index = 0; index < shape.blades; index += 1) {
+      const offset = shape.spread * ((index / (shape.blades - 1)) * 2 - 1);
+      const bladeAngle = angle + offset;
+      const blade = this.add
+        .triangle(originX, originY, 0, -6, 22, 0, 0, 6, color, 0.92)
+        .setRotation(bladeAngle)
+        .setDepth(9);
+      this.tweens.add({
+        targets: blade,
+        x: originX + Math.cos(bladeAngle) * shape.range,
+        y: originY + Math.sin(bladeAngle) * shape.range,
+        rotation: bladeAngle + Math.PI * 2.5,
+        alpha: 0.1,
+        duration: 260 + Math.abs(offset) * 90,
+        ease: "Quad.Out",
+        onComplete: () => blade.destroy(),
+      });
+      const trail = this.add.graphics().setDepth(8);
+      trail.lineStyle(3, color, 0.5);
+      trail.lineBetween(
+        originX,
+        originY,
+        originX + Math.cos(bladeAngle) * shape.range,
+        originY + Math.sin(bladeAngle) * shape.range,
+      );
+      this.tweens.add({
+        targets: trail,
+        alpha: 0,
+        duration: 220,
+        onComplete: () => trail.destroy(),
+      });
+    }
+    this.cameras.main.shake(90, 0.003);
+  }
+
+  private playEarthshatterEffect(radius: number, color: number): void {
+    const x = this.player.x;
+    const y = this.player.y;
+    this.playShieldImpact(x, y, radius, color);
+    this.playRuneCircle(x, y, radius * 0.8, color, 480);
+    for (let index = 0; index < 8; index += 1) {
+      const crackAngle = (index / 8) * Math.PI * 2 + 0.2;
+      const crack = this.add.graphics().setDepth(7);
+      crack.lineStyle(5, color, 0.75);
+      const midX = x + Math.cos(crackAngle + 0.16) * radius * 0.5;
+      const midY = y + Math.sin(crackAngle + 0.16) * radius * 0.5;
+      crack.lineBetween(x, y, midX, midY);
+      crack.lineBetween(
+        midX,
+        midY,
+        x + Math.cos(crackAngle) * radius,
+        y + Math.sin(crackAngle) * radius,
+      );
+      this.tweens.add({
+        targets: crack,
+        alpha: 0,
+        duration: 430 + index * 14,
+        ease: "Quad.Out",
+        onComplete: () => crack.destroy(),
+      });
+    }
+    for (let index = 0; index < 10; index += 1) {
+      const rockAngle = (index / 10) * Math.PI * 2;
+      const rock = this.add
+        .rectangle(x, y, 9, 9, index % 2 === 0 ? color : 0x9a8a66, 0.9)
+        .setRotation(rockAngle)
+        .setDepth(9);
+      this.tweens.add({
+        targets: rock,
+        x: x + Math.cos(rockAngle) * radius * 0.9,
+        y: y + Math.sin(rockAngle) * radius * 0.9 - 26,
+        angle: 200,
+        alpha: 0,
+        duration: 360 + index * 12,
+        ease: "Quad.Out",
+        onComplete: () => rock.destroy(),
+      });
+    }
+  }
+
+  private launchExplosiveArrow(
+    angle: number,
+    range: number,
+    blastRadius: number,
+    damage: number,
+    color: number,
+  ): void {
+    const startX = this.player.x + Math.cos(angle) * 28;
+    const startY = this.player.y + Math.sin(angle) * 28;
+    const endX = this.player.x + Math.cos(angle) * range;
+    const endY = this.player.y + Math.sin(angle) * range;
+    const projectile = this.add
+      .container(startX, startY)
+      .setRotation(angle)
+      .setDepth(9);
+    const glow = this.add.circle(0, 0, 13, color, 0.28);
+    const shaft = this.add
+      .rectangle(0, 0, 30, 6, color)
+      .setStrokeStyle(1, 0xffffee, 0.9);
+    const head = this.add.triangle(19, 0, -6, -6, 8, 0, -6, 6, 0xfff4cf, 0.96);
+    projectile.add([glow, shaft, head]);
+    this.tweens.add({
+      targets: projectile,
+      x: endX,
+      y: endY,
+      duration: Math.max(170, range * 0.62),
+      ease: "Linear",
+      onComplete: () => {
+        projectile.destroy();
+        this.playProjectileImpact(endX, endY, color);
+        const blast = this.add
+          .circle(endX, endY, blastRadius * 0.35, color, 0.24)
+          .setStrokeStyle(8, color, 0.85)
+          .setDepth(9);
+        this.tweens.add({
+          targets: blast,
+          radius: blastRadius,
+          alpha: 0,
+          duration: 300,
+          ease: "Quad.Out",
+          onComplete: () => blast.destroy(),
+        });
+        const flash = this.add
+          .circle(endX, endY, blastRadius * 0.5, 0xfff7dd, 0.5)
+          .setDepth(10);
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          scale: 1.7,
+          duration: 180,
+          onComplete: () => flash.destroy(),
+        });
+        this.damageEnemies(endX, endY, blastRadius, damage, 42);
+        this.cameras.main.shake(150, 0.005);
+      },
+    });
+    this.damageEnemiesAlongLine(
+      this.player.x,
+      this.player.y,
+      angle,
+      range,
+      16,
+      Math.round(damage * 0.4),
+    );
+  }
+
+  private playArcaneBeamEffect(
+    angle: number,
+    range: number,
+    width: number,
+    color: number,
+  ): void {
+    const originX = this.player.x + Math.cos(angle) * 30;
+    const originY = this.player.y + Math.sin(angle) * 30;
+    const endX = this.player.x + Math.cos(angle) * range;
+    const endY = this.player.y + Math.sin(angle) * range;
+    const beam = this.add.graphics().setDepth(9);
+    beam.lineStyle(width, color, 0.34);
+    beam.lineBetween(originX, originY, endX, endY);
+    beam.lineStyle(width * 0.5, color, 0.6);
+    beam.lineBetween(originX, originY, endX, endY);
+    beam.lineStyle(width * 0.2, 0xffffff, 0.95);
+    beam.lineBetween(originX, originY, endX, endY);
+    this.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration: 380,
+      ease: "Quad.Out",
+      onComplete: () => beam.destroy(),
+    });
+    this.playRuneCircle(this.player.x, this.player.y, 46, color, 420);
+    this.playProjectileImpact(endX, endY, color);
+    const steps = 6;
+    for (let index = 1; index <= steps; index += 1) {
+      const px = originX + ((endX - originX) * index) / steps;
+      const py = originY + ((endY - originY) * index) / steps;
+      const mote = this.add
+        .circle(px, py, 5, index % 2 === 0 ? color : 0xffffff, 0.8)
+        .setDepth(10);
+      this.tweens.add({
+        targets: mote,
+        y: py - 22,
+        alpha: 0,
+        duration: 280 + index * 30,
+        onComplete: () => mote.destroy(),
+      });
+    }
+    this.cameras.main.shake(120, 0.004);
   }
 
   private handleCyclopsBasicAttack(

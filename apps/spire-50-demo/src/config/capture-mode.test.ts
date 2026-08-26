@@ -9,6 +9,7 @@ describe("readCaptureSettings", () => {
       hud: "clean",
       weapon: "longsword",
       wandererRole: "ally",
+      skill2Level: 0,
     });
   });
 
@@ -23,7 +24,23 @@ describe("readCaptureSettings", () => {
       hud: "none",
       weapon: "staff",
       wandererRole: "enemy",
+      skill2Level: 0,
     });
+  });
+
+  it("clamps the captureSkill2 level into the valid range", () => {
+    expect(
+      readCaptureSettings("?capture=trailer&captureSkill2=2").skill2Level,
+    ).toBe(2);
+    expect(
+      readCaptureSettings("?capture=trailer&captureSkill2=9").skill2Level,
+    ).toBe(3);
+    expect(
+      readCaptureSettings("?capture=trailer&captureSkill2=-1").skill2Level,
+    ).toBe(0);
+    expect(
+      readCaptureSettings("?capture=trailer&captureSkill2=abc").skill2Level,
+    ).toBe(0);
   });
 
   it("rejects unsupported capture values", () => {
@@ -37,6 +54,7 @@ describe("readCaptureSettings", () => {
       hud: "clean",
       weapon: "longsword",
       wandererRole: "ally",
+      skill2Level: 0,
     });
   });
 });

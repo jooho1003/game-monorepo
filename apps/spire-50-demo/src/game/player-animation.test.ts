@@ -36,6 +36,19 @@ describe("player directional action textures", () => {
     }
   });
 
+  it("uses authored skill-2 frames for all 8 directions without mirroring", () => {
+    for (const weaponId of weaponIds) {
+      for (const direction of PLAYER_DIRECTIONS) {
+        expect(
+          playerActionTextureFrame("skill2", weaponId, direction, 1),
+        ).toEqual({
+          key: `player-skill2-${weaponId}-${direction}-1`,
+          flipX: false,
+        });
+      }
+    }
+  });
+
   it("keeps attack and skill keys distinct for every weapon", () => {
     expect(playerActionTextureKey("attack", "bow", "east", 1)).toBe(
       "player-attack-bow-east-1",

@@ -1782,8 +1782,45 @@ html[data-capture-hud="clean"] .skill-slot {
 }
 
 .skill-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
   right: 28px;
   bottom: 52px;
+}
+
+.skill-points {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid rgb(230 201 123 / 72%);
+  border-radius: 3px;
+  background: linear-gradient(135deg, rgb(28 24 12 / 96%), rgb(14 11 6 / 92%));
+  box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
+  color: #f0dfae;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.skill-points button {
+  padding: 6px 11px;
+  border: 1px solid #e6c97b;
+  border-radius: 2px;
+  background: #3a2f14;
+  color: #ffe9ad;
+  font: inherit;
+  cursor: pointer;
+}
+
+.skill-points button:hover:not(:disabled) {
+  background: #55461e;
+}
+
+.skill-points button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .skill-slot > div {

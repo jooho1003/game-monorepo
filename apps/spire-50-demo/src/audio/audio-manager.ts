@@ -23,7 +23,12 @@ export type SoundEffect =
   | "sheepBaa"
   | "rockGate"
   | "stoneDoor"
-  | "pickup";
+  | "pickup"
+  | "skill2Longsword"
+  | "skill2Dagger"
+  | "skill2Shield"
+  | "skill2Bow"
+  | "skill2Staff";
 
 interface SoundOptions {
   volume?: number;
@@ -66,6 +71,11 @@ const SFX_SOURCES: Record<SoundEffect, readonly string[]> = {
   rockGate: ["/assets/audio/sfx/rock-gate.ogg"],
   stoneDoor: ["/assets/audio/sfx/stone-door.wav"],
   pickup: ["/assets/audio/sfx/pickup-coin.wav"],
+  skill2Longsword: ["/assets/audio/sfx/skill2-longsword.wav"],
+  skill2Dagger: ["/assets/audio/sfx/skill2-dagger.wav"],
+  skill2Shield: ["/assets/audio/sfx/skill2-shield.wav"],
+  skill2Bow: ["/assets/audio/sfx/skill2-bow.wav"],
+  skill2Staff: ["/assets/audio/sfx/skill2-staff.wav"],
 };
 
 const SFX_VOLUME: Record<SoundEffect, number> = {
@@ -83,6 +93,19 @@ const SFX_VOLUME: Record<SoundEffect, number> = {
   rockGate: 0.48,
   stoneDoor: 0.44,
   pickup: 0.3,
+  skill2Longsword: 0.5,
+  skill2Dagger: 0.46,
+  skill2Shield: 0.55,
+  skill2Bow: 0.5,
+  skill2Staff: 0.48,
+};
+
+export const SKILL2_SFX_BY_WEAPON: Record<WeaponId, SoundEffect> = {
+  longsword: "skill2Longsword",
+  dagger: "skill2Dagger",
+  shield: "skill2Shield",
+  bow: "skill2Bow",
+  staff: "skill2Staff",
 };
 
 let unlocked = false;

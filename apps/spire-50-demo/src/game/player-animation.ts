@@ -32,8 +32,10 @@ const MIRRORED_DIRECTION: Partial<Record<PlayerDirection, PlayerDirection>> = {
   "south-west": "south-east",
 };
 
+export type PlayerActionKind = "attack" | "skill" | "skill2";
+
 export function playerActionTextureKey(
-  action: "attack" | "skill",
+  action: PlayerActionKind,
   weaponId: WeaponId,
   direction: PlayerDirection,
   frame: number,
@@ -42,7 +44,7 @@ export function playerActionTextureKey(
 }
 
 export function playerActionTextureFrame(
-  action: "attack" | "skill",
+  action: PlayerActionKind,
   weaponId: WeaponId,
   direction: PlayerDirection,
   frame: number,

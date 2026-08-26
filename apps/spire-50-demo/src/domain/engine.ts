@@ -13,6 +13,12 @@ export interface TransitionResult {
 
 export const HP_REGEN_PER_MINUTE = 6;
 export const MP_REGEN_PER_MINUTE = 12;
+export const SKILL2_MAX_LEVEL = 3;
+
+export function skill2DamageMultiplier(level: number): number {
+  if (level <= 0) return 0;
+  return 1 + (Math.min(level, SKILL2_MAX_LEVEL) - 1) * 0.25;
+}
 
 export function experienceRequiredForLevel(level: number): number {
   return 100 + Math.max(0, level - 1) * 45;
@@ -34,6 +40,7 @@ export function createInitialSnapshot(): GameSnapshot {
     experience: 0,
     experienceToNextLevel: experienceRequiredForLevel(1),
     skillPoints: 0,
+    skill2Level: 0,
     weapon: "longsword",
     hp: 100,
     mp: 100,
@@ -194,14 +201,21 @@ export function transition(
       };
     }
 
-    case "USE_SKILL":
-      if (!snapshot.skillUnlocked || snapshot.mp < command.manaCost) {
+    case "USE_SKILL": {
+      const skillId = command.skillId ?? "skill1";
+      const unlocked =
+        skillId === "skill2"
+          ? snapshot.skill2Level > 0
+          : snapshot.skillUnlocked;
+      if (!unlocked || snapshot.mp < command.manaCost) {
         return {
           snapshot: {
             ...snapshot,
-            notice: snapshot.skillUnlocked
+            notice: unlocked
               ? "마력이 부족합니다."
-              : "관리자와 대화해 스킬을 먼저 해금하세요.",
+              : skillId === "skill2"
+                ? "스킬 포인트로 2번 스킬을 먼저 배우세요."
+                : "관리자와 대화해 스킬을 먼저 해금하세요.",
           },
           events: [],
         };
@@ -212,8 +226,40 @@ export function transition(
           mp: clamp(snapshot.mp - command.manaCost, 0, 100),
           notice: "스킬을 사용했습니다.",
         },
-        events: [{ type: "skill-used" }],
+        events: [{ type: "skill-used", skillId }],
       };
+    }
+
+    case "ALLOCATE_SKILL_POINT": {
+      if (snapshot.skill2Level >= SKILL2_MAX_LEVEL) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: "2번 스킬이 이미 최대 레벨입니다.",
+          },
+          events: [],
+        };
+      }
+      if (snapshot.skillPoints < 1) {
+        return {
+          snapshot: { ...snapshot, notice: "스킬 포인트가 부족합니다." },
+          events: [],
+        };
+      }
+      const nextLevel = snapshot.skill2Level + 1;
+      return {
+        snapshot: {
+          ...snapshot,
+          skillPoints: snapshot.skillPoints - 1,
+          skill2Level: nextLevel,
+          notice:
+            nextLevel === 1
+              ? "2번 스킬을 배웠습니다. 숫자 2로 사용하세요."
+              : `2번 스킬이 레벨 ${nextLevel}이 되었습니다.`,
+        },
+        events: [{ type: "skill-learned", skill: "skill2", level: nextLevel }],
+      };
+    }
 
     case "RECOVER_RESOURCES": {
       const elapsedMinutes = Math.max(0, command.elapsedMs) / 60_000;

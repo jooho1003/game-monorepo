@@ -21,6 +21,8 @@ export const missionResultSchema = z
   ])
   .nullable();
 
+export type SkillId = "skill1" | "skill2";
+
 export type ScreenId = z.infer<typeof screenSchema>;
 export type ZoneId = z.infer<typeof zoneSchema>;
 export type WeaponId = z.infer<typeof weaponSchema>;
@@ -36,6 +38,7 @@ export const gameSnapshotSchema = z.object({
   experience: z.number().min(0).default(0),
   experienceToNextLevel: z.number().int().positive().default(100),
   skillPoints: z.number().int().min(0).default(0),
+  skill2Level: z.number().int().min(0).max(3).default(0),
   weapon: weaponSchema,
   hp: z.number().min(0).max(100),
   mp: z.number().min(0).max(100),
@@ -69,7 +72,8 @@ export type GameCommand =
   | { type: "ADVANCE_DIALOGUE" }
   | { type: "ENTER_ZONE"; zone: ZoneId }
   | { type: "TAKE_DAMAGE"; amount: number }
-  | { type: "USE_SKILL"; manaCost: number }
+  | { type: "USE_SKILL"; manaCost: number; skillId?: SkillId }
+  | { type: "ALLOCATE_SKILL_POINT"; skill: "skill2" }
   | { type: "RECOVER_RESOURCES"; elapsedMs: number }
   | { type: "GAIN_EXPERIENCE"; amount: number }
   | { type: "COMPLETE_FLOOR" }
@@ -87,7 +91,8 @@ export type GameEvent =
   | { type: "skill-unlocked"; message: string }
   | { type: "zone-entered"; zone: ZoneId }
   | { type: "player-damaged"; amount: number }
-  | { type: "skill-used" }
+  | { type: "skill-used"; skillId?: SkillId }
+  | { type: "skill-learned"; skill: "skill2"; level: number }
   | { type: "resources-recovered"; hp: number; mp: number }
   | { type: "experience-gained"; amount: number }
   | { type: "level-up"; level: number }

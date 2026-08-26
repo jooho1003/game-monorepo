@@ -17,6 +17,7 @@ export interface CaptureSettings {
   hud: CaptureHud;
   weapon: WeaponId;
   wandererRole: "ally" | "enemy";
+  skill2Level: number;
 }
 
 const CAPTURE_SCENES = new Set<CaptureScene>([
@@ -50,7 +51,14 @@ export function readCaptureSettings(search: string): CaptureSettings {
     hud: isCaptureHud(hud) ? hud : "clean",
     weapon: isWeaponId(weapon) ? weapon : "longsword",
     wandererRole: params.get("captureRole") === "enemy" ? "enemy" : "ally",
+    skill2Level: parseSkill2Level(params.get("captureSkill2")),
   };
+}
+
+function parseSkill2Level(value: string | null): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(3, Math.max(0, parsed));
 }
 
 export function applyCaptureDocumentMode(

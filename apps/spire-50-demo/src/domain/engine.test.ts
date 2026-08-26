@@ -155,6 +155,91 @@ describe("deterministic run shell", () => {
     expect(failed.lastMissionResult).toBe("failure-too-few-survivors");
   });
 
+  it("grants one skill point per level gained", () => {
+    const leveled = transition(createInitialSnapshot(), {
+      type: "GAIN_EXPERIENCE",
+      amount: 130,
+    }).snapshot;
+
+    expect(leveled.level).toBe(2);
+    expect(leveled.skillPoints).toBe(1);
+  });
+
+  it("learns and levels the second skill with skill points", () => {
+    const withPoints = {
+      ...createInitialSnapshot(),
+      skillPoints: 2,
+    };
+    const learned = transition(withPoints, {
+      type: "ALLOCATE_SKILL_POINT",
+      skill: "skill2",
+    });
+    expect(learned.snapshot.skill2Level).toBe(1);
+    expect(learned.snapshot.skillPoints).toBe(1);
+    expect(learned.events).toContainEqual({
+      type: "skill-learned",
+      skill: "skill2",
+      level: 1,
+    });
+
+    const upgraded = transition(learned.snapshot, {
+      type: "ALLOCATE_SKILL_POINT",
+      skill: "skill2",
+    }).snapshot;
+    expect(upgraded.skill2Level).toBe(2);
+    expect(upgraded.skillPoints).toBe(0);
+  });
+
+  it("refuses skill allocation without points and beyond max level", () => {
+    const broke = transition(createInitialSnapshot(), {
+      type: "ALLOCATE_SKILL_POINT",
+      skill: "skill2",
+    }).snapshot;
+    expect(broke.skill2Level).toBe(0);
+    expect(broke.notice).toBe("스킬 포인트가 부족합니다.");
+
+    const maxed = {
+      ...createInitialSnapshot(),
+      skillPoints: 3,
+      skill2Level: 3,
+    };
+    const capped = transition(maxed, {
+      type: "ALLOCATE_SKILL_POINT",
+      skill: "skill2",
+    }).snapshot;
+    expect(capped.skill2Level).toBe(3);
+    expect(capped.skillPoints).toBe(3);
+  });
+
+  it("gates the second skill until it is learned and spends mana on use", () => {
+    const unlockedFirst = {
+      ...createInitialSnapshot(),
+      skillUnlocked: true,
+    };
+    const refused = transition(unlockedFirst, {
+      type: "USE_SKILL",
+      manaCost: 35,
+      skillId: "skill2",
+    });
+    expect(refused.events).toHaveLength(0);
+    expect(refused.snapshot.mp).toBe(100);
+    expect(refused.snapshot.notice).toBe(
+      "스킬 포인트로 2번 스킬을 먼저 배우세요.",
+    );
+
+    const learned = { ...unlockedFirst, skill2Level: 1 };
+    const used = transition(learned, {
+      type: "USE_SKILL",
+      manaCost: 35,
+      skillId: "skill2",
+    });
+    expect(used.snapshot.mp).toBe(65);
+    expect(used.events).toContainEqual({
+      type: "skill-used",
+      skillId: "skill2",
+    });
+  });
+
   it("ignores fifth-floor failure commands outside its mission", () => {
     const initial = createInitialSnapshot();
     expect(

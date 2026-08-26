@@ -169,6 +169,7 @@ function createCaptureSnapshot(settings: CaptureSettings): GameSnapshot {
     weapon: settings.weapon,
     seed: 2_604_052,
     wandererRole: settings.wandererRole,
+    skill2Level: settings.skill2Level,
   };
 
   switch (settings.scene) {
