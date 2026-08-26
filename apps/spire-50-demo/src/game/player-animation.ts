@@ -1,5 +1,18 @@
 import type { WeaponId } from "../domain/model.js";
 
+/** One authored sprite pixel always occupies the same amount of world space. */
+export const PLAYER_WORLD_SCALE = 0.75;
+
+export function playerDisplaySize(
+  sourceWidth: number,
+  sourceHeight: number,
+): { width: number; height: number } {
+  return {
+    width: sourceWidth * PLAYER_WORLD_SCALE,
+    height: sourceHeight * PLAYER_WORLD_SCALE,
+  };
+}
+
 export type PlayerDirection =
   | "north"
   | "north-east"

@@ -39,14 +39,7 @@ export interface BattleObstacleSpec {
   y: number;
   width: number;
   height: number;
-  kind:
-    | "tree"
-    | "cactus"
-    | "dead-tree"
-    | "ruin"
-    | "basalt"
-    | "ice"
-    | "pillar";
+  kind: "tree" | "cactus" | "dead-tree" | "ruin" | "basalt" | "ice" | "pillar";
 }
 
 export interface BattleLayout {
@@ -74,7 +67,7 @@ const BIOMES: readonly Omit<
 >[] = [
   {
     biome: "forest",
-    name: "녹음과 사막의 경계",
+    name: "영원의 녹원",
     palette: {
       ground: 0x3f8751,
       groundAlt: 0x327244,
@@ -93,7 +86,7 @@ const BIOMES: readonly Omit<
   },
   {
     biome: "lava",
-    name: "잿빛 제련 경계",
+    name: "잿불 제련 평원",
     palette: {
       ground: 0x4a342c,
       groundAlt: 0x382825,
@@ -112,7 +105,7 @@ const BIOMES: readonly Omit<
   },
   {
     biome: "glacier",
-    name: "빙설과 침수 유적",
+    name: "월백 빙원",
     palette: {
       ground: 0x426978,
       groundAlt: 0x335765,
@@ -131,7 +124,7 @@ const BIOMES: readonly Omit<
   },
   {
     biome: "ruins",
-    name: "자색 왕실의 황무지",
+    name: "자색 왕실 평원",
     palette: {
       ground: 0x4b4058,
       groundAlt: 0x3b3349,
@@ -153,148 +146,17 @@ const BIOMES: readonly Omit<
 export function getBattleLayout(floor: number): BattleLayout {
   const safeFloor = Math.max(1, Math.floor(floor));
   const biome = BIOMES[(safeFloor - 1) % BIOMES.length]!;
-  const worldWidth = 2400 + ((safeFloor - 1) % 3) * 120;
-  const worldHeight = 1500 + (safeFloor % 2) * 120;
-  const variant = (safeFloor - 1) % BIOMES.length;
   return {
     ...biome,
-    worldWidth,
-    worldHeight,
-    terrain: createTerrain(worldWidth, worldHeight, variant),
-    boundaries: createBoundaries(worldWidth, worldHeight, variant),
-    obstacles: createObstacles(worldWidth, worldHeight, biome.biome),
+    // Every regular combat floor uses the same 3:2 world footprint so the
+    // authored full-map art is never cropped, repeated, or stretched between
+    // floors. Only the visual theme and combat pressure change.
+    worldWidth: 2400,
+    worldHeight: 1600,
+    terrain: [],
+    boundaries: [],
+    obstacles: [],
   };
-}
-
-function createTerrain(
-  worldWidth: number,
-  worldHeight: number,
-  variant: number,
-): BattleTerrainRegion[] {
-  const seam = worldWidth * (0.56 + (variant % 2) * 0.025);
-  const lowerLakeX = worldWidth * (variant % 2 === 0 ? 0.43 : 0.3);
-  return [
-    {
-      kind: "secondary",
-      points: [
-        { x: seam, y: 76 },
-        { x: seam + 90, y: worldHeight * 0.2 },
-        { x: seam - 35, y: worldHeight * 0.36 },
-        { x: seam + 105, y: worldHeight * 0.54 },
-        { x: seam + 10, y: worldHeight * 0.7 },
-        { x: seam + 145, y: worldHeight - 76 },
-        { x: worldWidth - 76, y: worldHeight - 76 },
-        { x: worldWidth - 76, y: 76 },
-      ],
-    },
-    {
-      kind: "path",
-      points: [
-        { x: worldWidth * 0.12, y: worldHeight * 0.28 },
-        { x: worldWidth * 0.47, y: worldHeight * 0.25 },
-        { x: worldWidth * 0.49, y: worldHeight * 0.34 },
-        { x: worldWidth * 0.31, y: worldHeight * 0.38 },
-        { x: worldWidth * 0.3, y: worldHeight * 0.64 },
-        { x: worldWidth * 0.22, y: worldHeight * 0.68 },
-        { x: worldWidth * 0.21, y: worldHeight * 0.43 },
-        { x: worldWidth * 0.11, y: worldHeight * 0.39 },
-      ],
-    },
-    {
-      kind: "path",
-      points: [
-        { x: worldWidth * 0.3, y: worldHeight * 0.52 },
-        { x: worldWidth * 0.57, y: worldHeight * 0.5 },
-        { x: worldWidth * 0.59, y: worldHeight * 0.58 },
-        { x: worldWidth * 0.31, y: worldHeight * 0.61 },
-      ],
-    },
-    {
-      kind: "water",
-      points: [
-        { x: 76, y: 76 },
-        { x: worldWidth * 0.2, y: 76 },
-        { x: worldWidth * 0.18, y: worldHeight * 0.18 },
-        { x: worldWidth * 0.13, y: worldHeight * 0.24 },
-        { x: 76, y: worldHeight * 0.2 },
-      ],
-    },
-    {
-      kind: "water",
-      points: [
-        { x: lowerLakeX, y: worldHeight * 0.73 },
-        { x: lowerLakeX + worldWidth * 0.17, y: worldHeight * 0.7 },
-        { x: lowerLakeX + worldWidth * 0.22, y: worldHeight - 76 },
-        { x: lowerLakeX - worldWidth * 0.05, y: worldHeight - 76 },
-        { x: lowerLakeX - worldWidth * 0.07, y: worldHeight * 0.82 },
-      ],
-    },
-    {
-      kind: "stone",
-      points: [
-        { x: worldWidth * 0.72, y: worldHeight * 0.18 },
-        { x: worldWidth * 0.86, y: worldHeight * 0.18 },
-        { x: worldWidth * 0.87, y: worldHeight * 0.32 },
-        { x: worldWidth * 0.73, y: worldHeight * 0.33 },
-      ],
-    },
-    {
-      kind: "stone",
-      points: [
-        { x: worldWidth * 0.67, y: worldHeight * 0.63 },
-        { x: worldWidth * 0.83, y: worldHeight * 0.61 },
-        { x: worldWidth * 0.84, y: worldHeight * 0.76 },
-        { x: worldWidth * 0.69, y: worldHeight * 0.77 },
-      ],
-    },
-  ];
-}
-
-function createBoundaries(
-  worldWidth: number,
-  worldHeight: number,
-  variant: number,
-): BattleBoundarySpec[] {
-  const seam = worldWidth * (0.56 + (variant % 2) * 0.025);
-  return [
-    { x: seam + 42, y: worldHeight * 0.2, width: 74, height: worldHeight * 0.2, kind: "cliff" },
-    { x: seam + 16, y: worldHeight * 0.47, width: 74, height: worldHeight * 0.15, kind: "cliff" },
-    { x: seam + 72, y: worldHeight * 0.75, width: 78, height: worldHeight * 0.18, kind: "cliff" },
-    { x: worldWidth * 0.79, y: worldHeight * 0.18, width: worldWidth * 0.14, height: 34, kind: "ruin-wall" },
-    { x: worldWidth * 0.72, y: worldHeight * 0.7, width: 32, height: worldHeight * 0.14, kind: "ruin-wall" },
-  ];
-}
-
-function createObstacles(
-  worldWidth: number,
-  worldHeight: number,
-  biome: BattleBiomeId,
-): BattleObstacleSpec[] {
-  const themed: Record<BattleBiomeId, BattleObstacleSpec["kind"][]> = {
-    forest: ["tree", "ruin", "tree", "cactus", "dead-tree", "ruin"],
-    lava: ["basalt", "ruin", "basalt", "dead-tree", "pillar", "basalt"],
-    glacier: ["ice", "pillar", "ice", "ruin", "ice", "pillar"],
-    ruins: ["pillar", "ruin", "dead-tree", "pillar", "ruin", "pillar"],
-  };
-  const kinds = themed[biome];
-  const specs = [
-    [0.16, 0.22, 150, 150],
-    [0.35, 0.2, 184, 144],
-    [0.44, 0.44, 138, 156],
-    [0.71, 0.25, 104, 132],
-    [0.89, 0.3, 132, 176],
-    [0.76, 0.68, 186, 138],
-    [0.18, 0.61, 128, 152],
-    [0.38, 0.66, 148, 122],
-    [0.9, 0.72, 122, 164],
-  ] as const;
-  return specs.map(([x, y, width, height], index) => ({
-    x: worldWidth * x,
-    y: worldHeight * y,
-    width,
-    height,
-    kind: kinds[index % kinds.length]!,
-  }));
 }
 
 export function getFloorDifficulty(floor: number): FloorDifficulty {
