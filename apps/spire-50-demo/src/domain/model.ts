@@ -12,6 +12,7 @@ export const screenSchema = z.enum(["title", "select", "game"]);
 export const zoneSchema = z.enum(["rest", "battle", "shop"]);
 export const weaponSchema = z.enum(weaponIds);
 export const wandererRoleSchema = z.enum(["ally", "enemy"]);
+export const skillNodeSchema = z.enum(["focus", "resonance"]);
 export const missionResultSchema = z
   .enum([
     "failure-timeout",
@@ -25,6 +26,7 @@ export type ScreenId = z.infer<typeof screenSchema>;
 export type ZoneId = z.infer<typeof zoneSchema>;
 export type WeaponId = z.infer<typeof weaponSchema>;
 export type WandererRole = z.infer<typeof wandererRoleSchema>;
+export type SkillNodeId = z.infer<typeof skillNodeSchema>;
 
 export const gameSnapshotSchema = z.object({
   saveVersion: z.literal(1),
@@ -51,6 +53,8 @@ export const gameSnapshotSchema = z.object({
     )
     .default([]),
   skillUnlocked: z.boolean(),
+  focusUnlocked: z.boolean().default(false),
+  resonanceUnlocked: z.boolean().default(false),
   dialogueOpen: z.boolean(),
   dialogueIndex: z.number().int().min(0),
   seed: z.number().int().nonnegative(),
@@ -70,6 +74,9 @@ export type GameCommand =
   | { type: "ENTER_ZONE"; zone: ZoneId }
   | { type: "TAKE_DAMAGE"; amount: number }
   | { type: "USE_SKILL"; manaCost: number }
+  | { type: "USE_SECOND_SKILL"; manaCost: number }
+  | { type: "USE_THIRD_SKILL"; manaCost: number }
+  | { type: "UNLOCK_SKILL_NODE"; node: SkillNodeId }
   | { type: "RECOVER_RESOURCES"; elapsedMs: number }
   | { type: "GAIN_EXPERIENCE"; amount: number }
   | { type: "COMPLETE_FLOOR" }
@@ -85,9 +92,12 @@ export type GameCommand =
 export type GameEvent =
   | { type: "notice"; message: string }
   | { type: "skill-unlocked"; message: string }
+  | { type: "skill-node-unlocked"; node: SkillNodeId }
   | { type: "zone-entered"; zone: ZoneId }
   | { type: "player-damaged"; amount: number }
   | { type: "skill-used" }
+  | { type: "second-skill-used" }
+  | { type: "third-skill-used" }
   | { type: "resources-recovered"; hp: number; mp: number }
   | { type: "experience-gained"; amount: number }
   | { type: "level-up"; level: number }

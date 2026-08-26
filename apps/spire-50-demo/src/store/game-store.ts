@@ -115,6 +115,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   clearFifthFloorCommandRequest: () => set({ fifthFloorCommandRequest: null }),
 }));
 
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as { __spireStore?: typeof useGameStore }).__spireStore =
+    useGameStore;
+}
+
 function readSave(): SaveEnvelope | undefined {
   if (typeof window === "undefined") return undefined;
   const raw = window.localStorage.getItem(SAVE_KEY);
@@ -201,7 +206,10 @@ function createCaptureSnapshot(settings: CaptureSettings): GameSnapshot {
         ...base,
         screen: "game",
         zone: "battle",
+        level: 5,
         skillUnlocked: true,
+        focusUnlocked: true,
+        resonanceUnlocked: true,
         objective: "적을 돌파하고 전리품을 회수하세요.",
         notice:
           settings.wandererRole === "ally"
@@ -225,7 +233,10 @@ function createCaptureSnapshot(settings: CaptureSettings): GameSnapshot {
         screen: "game",
         zone: "battle",
         floor: 5,
+        level: 5,
         skillUnlocked: true,
+        focusUnlocked: true,
+        resonanceUnlocked: true,
         objective: "외눈박이의 시야를 피해 바위문을 돌파하세요.",
         notice: "병사들과 함께 탈출 전략을 선택하세요.",
       };

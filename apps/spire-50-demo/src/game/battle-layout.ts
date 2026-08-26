@@ -166,6 +166,28 @@ export function getFloorDifficulty(floor: number): FloorDifficulty {
     speed: Math.min(1.75, 1 + step * 0.035),
     damage: 1 + step * 0.09,
     attackRate: Math.min(1.7, 1 + step * 0.04),
-    enemyCount: 3 + Math.min(6, Math.floor(step / 2)),
+    enemyCount: 6 + Math.min(24, step),
+  };
+}
+
+export function getBattleEnemySpawnPoint(
+  floor: number,
+  index: number,
+  enemyCount: number,
+): BattlePoint {
+  const safeCount = Math.max(1, Math.floor(enemyCount));
+  const safeIndex = Math.max(0, Math.floor(index));
+  const columns = Math.min(6, Math.ceil(Math.sqrt(safeCount * 1.5)));
+  const rows = Math.ceil(safeCount / columns);
+  const column = safeIndex % columns;
+  const row = Math.floor(safeIndex / columns);
+  const normalizedX = columns === 1 ? 0.5 : column / (columns - 1);
+  const normalizedY = rows === 1 ? 0.5 : row / (rows - 1);
+  const jitterX = ((((safeIndex + 1) * 37 + floor * 17) % 11) - 5) * 0.004;
+  const jitterY = ((((safeIndex + 1) * 29 + floor * 13) % 9) - 4) * 0.004;
+
+  return {
+    x: Math.min(0.9, Math.max(0.1, 0.12 + normalizedX * 0.76 + jitterX)),
+    y: Math.min(0.84, Math.max(0.12, 0.14 + normalizedY * 0.68 + jitterY)),
   };
 }

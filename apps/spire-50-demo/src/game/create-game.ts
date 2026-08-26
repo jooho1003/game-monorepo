@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { PlayScene } from "./PlayScene.js";
 
 export function createPhaserGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
     width: 1280,
@@ -27,4 +27,8 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
     },
     scene: [PlayScene],
   });
+  if (import.meta.env.DEV) {
+    (window as { __spireGame?: Phaser.Game }).__spireGame = game;
+  }
+  return game;
 }
