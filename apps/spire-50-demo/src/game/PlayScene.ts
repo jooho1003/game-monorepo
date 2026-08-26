@@ -33,6 +33,7 @@ import {
 } from "./battle-layout.js";
 import {
   PLAYER_DIRECTIONS,
+  PLAYER_WORLD_SCALE,
   directionFromAngle,
   directionFromAxes,
   playerActionTextureFrame,
@@ -79,6 +80,12 @@ import {
   REST_PORTAL_POSITIONS,
   REST_STRUCTURE_COLLIDERS,
 } from "./rest-layout.js";
+import {
+  WEAPON_COMBAT,
+  circleHitsCircle,
+  circleHitsCone,
+  circleHitsSegment,
+} from "./weapon-combat.js";
 
 interface EnemyActor {
   node: Phaser.GameObjects.Image;
@@ -97,6 +104,7 @@ interface EnemyActor {
   textureBase: ActorKind;
   direction: ActorDirection;
   xpReward: number;
+  hitRadius: number;
 }
 
 interface DropActor {
@@ -113,13 +121,6 @@ interface PortalActor {
   rune: Phaser.GameObjects.Text;
   label: Phaser.GameObjects.Text;
   target: ZoneId;
-}
-
-interface WeaponCombatProfile {
-  cooldown: number;
-  range: number;
-  damage: number;
-  color: number;
 }
 
 interface MissionSheep {
@@ -189,8 +190,6 @@ type ActorKind = "rat" | "beetle" | "wraith" | "wanderer";
 const WIDTH = 1280;
 const HEIGHT = 720;
 const PLAYER_SPEED = 235;
-const PLAYER_ACTION_DISPLAY_SIZE = 84;
-const PLAYER_WORLD_SCALE = 0.75;
 const PLAYER_FEET_WIDTH = 19;
 const PLAYER_FEET_HEIGHT = 10;
 const WEAPON_ATTACK_DURATION = 290;
@@ -277,39 +276,6 @@ const SKILL_POSE_DURATIONS: Record<WeaponId, number> = {
   shield: 520,
   bow: 480,
   staff: 720,
-};
-
-const WEAPON_COMBAT: Record<WeaponId, WeaponCombatProfile> = {
-  longsword: {
-    cooldown: 410,
-    range: 118,
-    damage: 29,
-    color: 0xe9f4ee,
-  },
-  dagger: {
-    cooldown: 230,
-    range: 92,
-    damage: 18,
-    color: 0xe2a5f4,
-  },
-  shield: {
-    cooldown: 560,
-    range: 72,
-    damage: 22,
-    color: 0xf2cb76,
-  },
-  bow: {
-    cooldown: 510,
-    range: 390,
-    damage: 26,
-    color: 0xa8df78,
-  },
-  staff: {
-    cooldown: 640,
-    range: 300,
-    damage: 31,
-    color: 0x84baff,
-  },
 };
 
 export class PlayScene extends Phaser.Scene {
@@ -883,71 +849,21 @@ export class PlayScene extends Phaser.Scene {
     this.battleLayout = layout;
     const { palette, worldWidth, worldHeight } = layout;
     this.add
-      .tileSprite(
-        worldWidth / 2,
-        worldHeight / 2,
-        worldWidth,
-        worldHeight,
-        `battle-floor-${layout.biome}`,
-      )
-      .setTileScale(0.52)
+      .image(worldWidth / 2, worldHeight / 2, `battle-floor-${layout.biome}`)
+      .setDisplaySize(worldWidth, worldHeight)
       .setDepth(-4);
 
     const graphics = this.add.graphics().setDepth(-3);
-    graphics.fillStyle(0x0b1014, 1);
-    graphics.fillRect(0, 0, worldWidth, 76);
-    graphics.fillRect(0, worldHeight - 76, worldWidth, 76);
-    graphics.fillRect(0, 76, 76, worldHeight - 152);
-    graphics.fillRect(worldWidth - 76, 76, 76, worldHeight - 152);
-    graphics.fillStyle(palette.ground, 0.13);
-    graphics.fillRect(76, 76, worldWidth - 152, worldHeight - 152);
-
-    for (const region of layout.terrain) {
-      const fill =
-        region.kind === "secondary"
-          ? palette.secondaryGround
-          : region.kind === "path"
-            ? palette.path
-            : region.kind === "water"
-              ? palette.water
-              : palette.stone;
-      const regionAlpha =
-        region.kind === "water"
-          ? 0.82
-          : region.kind === "secondary"
-            ? 0.58
-            : region.kind === "path"
-              ? 0.44
-              : 0.56;
-      graphics.fillStyle(fill, regionAlpha);
-      const points = region.points.map((point) => ({ ...point }));
-      graphics.fillPoints(points, true);
-      graphics.lineStyle(9, 0x05090b, region.kind === "water" ? 0.44 : 0.2);
-      graphics.strokePoints(points, true);
-      graphics.lineStyle(
-        region.kind === "water" ? 4 : 2,
-        region.kind === "water" ? palette.waterLight : palette.edge,
-        region.kind === "water" ? 0.72 : 0.42,
-      );
-      graphics.strokePoints(points, true);
-      if (region.kind === "water") {
-        this.collisionPolygons.push(new Phaser.Geom.Polygon(points));
-      }
-    }
-
-    this.drawBiomeDetails(layout);
-    this.drawWorldWalls(layout);
+    graphics.fillStyle(palette.ground, 0.045);
+    graphics.fillRect(0, 0, worldWidth, worldHeight);
+    graphics.lineStyle(18, palette.edge, 0.3);
+    graphics.strokeRect(48, 48, worldWidth - 96, worldHeight - 96);
     this.movementBounds = new Phaser.Geom.Rectangle(
-      98,
-      98,
-      worldWidth - 196,
-      worldHeight - 196,
+      58,
+      58,
+      worldWidth - 116,
+      worldHeight - 116,
     );
-    for (const boundary of layout.boundaries) {
-      this.addBattleBoundary(boundary, layout);
-    }
-    for (const obstacle of layout.obstacles)
-      this.addBattleObstacle(obstacle, layout);
   }
 
   private drawCyclopsCaveFloor(): void {
@@ -2160,9 +2076,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.cyclopsAction === "walk" || this.cyclopsAction === "idle") {
       this.cyclopsBoss.setTexture(
         "cyclops-walk-8d",
-        `${this.cyclopsDirection}-${
-          this.cyclopsAction === "idle" ? 0 : frame
-        }`,
+        `${this.cyclopsDirection}-${this.cyclopsAction === "idle" ? 0 : frame}`,
       );
     } else if (
       this.cyclopsAction === "gate-open" ||
@@ -2289,16 +2203,17 @@ export class PlayScene extends Phaser.Scene {
       } else if (fighting && bossDistance <= 225) {
         targetX = soldier.node.x;
         targetY = soldier.node.y;
-        if (time >= soldier.nextAttackAt && time >= this.missionAttackHoldUntil) {
+        if (
+          time >= soldier.nextAttackAt &&
+          time >= this.missionAttackHoldUntil
+        ) {
           soldier.nextAttackAt = time + 1_350 + (soldier.index % 4) * 90;
           this.playMissionSoldierAttack(soldier, bossPoint);
         }
       }
       if (time < soldier.attackEndsAt) {
         const frame = time - soldier.attackStartedAt < 145 ? 0 : 1;
-        soldier.node.setTexture(
-          `soldier-attack-${soldier.direction}-${frame}`,
-        );
+        soldier.node.setTexture(`soldier-attack-${soldier.direction}-${frame}`);
       } else {
         soldier.direction = this.moveMissionWalker(
           soldier.node,
@@ -2350,8 +2265,8 @@ export class PlayScene extends Phaser.Scene {
       // seconds is nudged straight to its side of the door.
       if (
         flockTransit &&
-        (this.fifthFloorMission?.phaseRemainingMs ?? Number.POSITIVE_INFINITY) <=
-          SHEEP_TRANSIT_WATCHDOG_WINDOW_MS
+        (this.fifthFloorMission?.phaseRemainingMs ??
+          Number.POSITIVE_INFINITY) <= SHEEP_TRANSIT_WATCHDOG_WINDOW_MS
       ) {
         const destination =
           this.fifthFloorMission?.flockDirection === "in"
@@ -2375,7 +2290,10 @@ export class PlayScene extends Phaser.Scene {
         if (progressed || remaining <= 60) {
           sheep.node.setData(
             "transitWatchRemaining",
-            Math.min(remaining, Number.isFinite(bestRemaining) ? bestRemaining : remaining),
+            Math.min(
+              remaining,
+              Number.isFinite(bestRemaining) ? bestRemaining : remaining,
+            ),
           );
           sheep.node.setData("transitWatchSince", time);
         } else if (time - since > 5_000) {
@@ -2501,11 +2419,7 @@ export class PlayScene extends Phaser.Scene {
         this.weaponAttackStartedAt = time;
         this.playThrustEffect(bossAngle, 126, 0xffe2a6, 11);
         playSfx("weaponHit", { volume: 0.62, rate: 0.9 });
-        const hit = hitCyclopsWithBasicAttack(
-          this.fifthFloorMission,
-          20,
-          true,
-        );
+        const hit = hitCyclopsWithBasicAttack(this.fifthFloorMission, 20, true);
         this.fifthFloorMission = hit.state;
         this.handleFifthFloorEvents(hit.events);
         return;
@@ -2741,7 +2655,9 @@ export class PlayScene extends Phaser.Scene {
     const frame = striding
       ? Math.floor(
           (time + walkPhase) /
-            (isSheep ? MISSION_SHEEP_FRAME_DURATION : MISSION_WALK_FRAME_DURATION),
+            (isSheep
+              ? MISSION_SHEEP_FRAME_DURATION
+              : MISSION_WALK_FRAME_DURATION),
         ) % 2
       : 0;
     const textureKey = isSheep ? "sheep-walk-8d" : "soldier-walk-8d";
@@ -3460,7 +3376,8 @@ export class PlayScene extends Phaser.Scene {
               CAVE_GATE_POSITION.x -
                 230 +
                 Math.max(0, this.caveGate!.x - CAVE_GATE_POSITION.x) * 0.1,
-              CAVE_GATE_POSITION.y + 18 -
+              CAVE_GATE_POSITION.y +
+                18 -
                 Math.max(0, CAVE_GATE_POSITION.y - this.caveGate!.y) * 0.44,
             );
             this.cyclopsName?.setPosition(
@@ -3505,10 +3422,7 @@ export class PlayScene extends Phaser.Scene {
     const boss = this.cyclopsBoss;
     if (boss) {
       this.tweens.killTweensOf(boss);
-      boss.setPosition(
-        CAVE_GATE_POSITION.x - 214,
-        CAVE_GATE_POSITION.y - 114,
-      );
+      boss.setPosition(CAVE_GATE_POSITION.x - 214, CAVE_GATE_POSITION.y - 114);
       this.tweens.add({
         targets: boss,
         x: CAVE_GATE_POSITION.x - 230,
@@ -3589,10 +3503,7 @@ export class PlayScene extends Phaser.Scene {
         duration,
         ease: "Sine.InOut",
         onUpdate: () =>
-          this.cyclopsName?.setPosition(
-            boss.x,
-            boss.y - CYCLOPS_LABEL_OFFSET,
-          ),
+          this.cyclopsName?.setPosition(boss.x, boss.y - CYCLOPS_LABEL_OFFSET),
         onComplete: () => {
           if (this.fifthFloorMission?.phase !== "sleeping") return;
           this.bossGateActionEndsAt = Number.NEGATIVE_INFINITY;
@@ -3915,10 +3826,10 @@ export class PlayScene extends Phaser.Scene {
       typeof texture === "string" ? { key: texture, flipX: false } : texture;
     this.player.setTexture(frame.key);
     this.player.setFlipX(frame.flipX);
-    this.player.setDisplaySize(
-      PLAYER_ACTION_DISPLAY_SIZE,
-      PLAYER_ACTION_DISPLAY_SIZE,
-    );
+    // Preserve the authored pixel scale across stance, movement, dash, attack,
+    // and skill textures. Forcing every source into a square display box used
+    // to distort the narrower 64x96 dash frames.
+    this.player.setScale(PLAYER_WORLD_SCALE);
   }
 
   private updateHeldWeapon(): void {
@@ -4100,13 +4011,14 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "longsword") {
-      this.playSlashEffect(angle, profile.range, profile.color, 0.68);
+      const halfAngle = profile.halfAngle ?? 0.68;
+      this.playSlashEffect(angle, profile.range, profile.color, halfAngle);
       this.damageEnemiesInCone(
         this.player.x,
         this.player.y,
         angle,
         profile.range,
-        0.68,
+        halfAngle,
         profile.damage,
       );
       return;
@@ -4119,7 +4031,7 @@ export class PlayScene extends Phaser.Scene {
         this.player.y,
         angle,
         profile.range,
-        18,
+        profile.hitRadius,
         profile.damage,
       );
       return;
@@ -4128,13 +4040,19 @@ export class PlayScene extends Phaser.Scene {
     if (weaponId === "shield") {
       const hitX = this.player.x + Math.cos(angle) * 48;
       const hitY = this.player.y + Math.sin(angle) * 48;
-      this.playShieldImpact(hitX, hitY, 52, profile.color);
-      this.damageEnemies(hitX, hitY, 56, profile.damage, 34);
+      this.playShieldImpact(hitX, hitY, profile.hitRadius, profile.color);
+      this.damageEnemies(hitX, hitY, profile.hitRadius, profile.damage, 34);
       return;
     }
 
     if (weaponId === "bow") {
-      this.launchArrow(angle, profile.range, profile.damage, profile.color, 18);
+      this.launchArrow(
+        angle,
+        profile.range,
+        profile.damage,
+        profile.color,
+        profile.hitRadius,
+      );
       return;
     }
 
@@ -4152,7 +4070,7 @@ export class PlayScene extends Phaser.Scene {
       angle,
       targetDistance,
       profile.damage,
-      58,
+      profile.hitRadius,
       profile.color,
     );
   }
@@ -4386,7 +4304,7 @@ export class PlayScene extends Phaser.Scene {
           originY - Math.sin(angle) * index * 14,
           texture.key,
         )
-        .setDisplaySize(PLAYER_ACTION_DISPLAY_SIZE, PLAYER_ACTION_DISPLAY_SIZE)
+        .setScale(PLAYER_WORLD_SCALE)
         .setOrigin(0.5, 0.78)
         .setFlipX(texture.flipX)
         .setTint(color)
@@ -4915,10 +4833,7 @@ export class PlayScene extends Phaser.Scene {
     knockback = 0,
   ): void {
     for (const actor of [...this.enemies]) {
-      if (
-        Phaser.Math.Distance.Between(x, y, actor.node.x, actor.node.y) > radius
-      )
-        continue;
+      if (!circleHitsCircle(this.enemyCircle(actor), x, y, radius)) continue;
       this.hitEnemy(actor, damage, x, y, knockback);
     }
   }
@@ -4933,22 +4848,10 @@ export class PlayScene extends Phaser.Scene {
     knockback = 0,
   ): void {
     for (const actor of [...this.enemies]) {
-      const distance = Phaser.Math.Distance.Between(
-        x,
-        y,
-        actor.node.x,
-        actor.node.y,
-      );
-      if (distance > range) continue;
-      const targetAngle = Phaser.Math.Angle.Between(
-        x,
-        y,
-        actor.node.x,
-        actor.node.y,
-      );
-      if (Math.abs(Phaser.Math.Angle.Wrap(targetAngle - angle)) > halfAngle) {
+      if (
+        !circleHitsCone(this.enemyCircle(actor), x, y, angle, range, halfAngle)
+      )
         continue;
-      }
       this.hitEnemy(actor, damage, x, y, knockback);
     }
   }
@@ -4965,12 +4868,20 @@ export class PlayScene extends Phaser.Scene {
     const endY = y + Math.sin(angle) * range;
     for (const actor of [...this.enemies]) {
       if (
-        distanceToSegment(actor.node.x, actor.node.y, x, y, endX, endY) > width
+        !circleHitsSegment(this.enemyCircle(actor), x, y, endX, endY, width)
       ) {
         continue;
       }
       this.hitEnemy(actor, damage, x, y);
     }
+  }
+
+  private enemyCircle(actor: EnemyActor): {
+    x: number;
+    y: number;
+    radius: number;
+  } {
+    return { x: actor.node.x, y: actor.node.y, radius: actor.hitRadius };
   }
 
   private hitEnemy(
@@ -5349,6 +5260,8 @@ export class PlayScene extends Phaser.Scene {
       textureBase,
       direction: "south",
       xpReward,
+      hitRadius:
+        textureBase === "wanderer" ? 25 : textureBase === "wraith" ? 31 : 27,
     };
   }
 
@@ -5676,31 +5589,6 @@ function cardinalDirectionFromAxes(
 function playerDirectionAngle(direction: PlayerDirection): number {
   const index = PLAYER_DIRECTIONS.indexOf(direction);
   return -Math.PI / 2 + index * (Math.PI / 4);
-}
-
-function distanceToSegment(
-  pointX: number,
-  pointY: number,
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-): number {
-  const segmentX = endX - startX;
-  const segmentY = endY - startY;
-  const lengthSquared = segmentX * segmentX + segmentY * segmentY;
-  if (lengthSquared === 0) {
-    return Phaser.Math.Distance.Between(pointX, pointY, startX, startY);
-  }
-  const projection = Phaser.Math.Clamp(
-    ((pointX - startX) * segmentX + (pointY - startY) * segmentY) /
-      lengthSquared,
-    0,
-    1,
-  );
-  const nearestX = startX + segmentX * projection;
-  const nearestY = startY + segmentY * projection;
-  return Phaser.Math.Distance.Between(pointX, pointY, nearestX, nearestY);
 }
 
 export function relationLabel(role: WandererRole): string {

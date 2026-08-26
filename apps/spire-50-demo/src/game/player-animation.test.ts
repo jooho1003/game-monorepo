@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { weaponIds } from "../domain/model.js";
 import {
   PLAYER_DIRECTIONS,
+  PLAYER_WORLD_SCALE,
   directionFromAxes,
   directionFromAngle,
   playerActionTextureFrame,
   playerActionTextureKey,
   playerLocomotionTextureFrame,
+  playerDisplaySize,
   playerWalkTextureFrame,
 } from "./player-animation.js";
 
@@ -78,6 +80,18 @@ describe("player directional action textures", () => {
   it("preserves the dash direction when no movement key remains held", () => {
     expect(directionFromAxes(0, 0, "north")).toBe("north");
     expect(directionFromAxes(0, -1, "east")).toBe("north");
+  });
+
+  it("uses one world-pixel scale without stretching any animation frame", () => {
+    expect(PLAYER_WORLD_SCALE).toBe(0.75);
+    expect(playerDisplaySize(112, 112)).toEqual({ width: 84, height: 84 });
+    expect(playerDisplaySize(64, 96)).toEqual({ width: 48, height: 72 });
+    expect(playerDisplaySize(112, 112).width / 112).toBe(
+      playerDisplaySize(64, 96).width / 64,
+    );
+    expect(playerDisplaySize(112, 112).height / 112).toBe(
+      playerDisplaySize(64, 96).height / 96,
+    );
   });
 
   it("maps cursor angles to all authored action directions", () => {
