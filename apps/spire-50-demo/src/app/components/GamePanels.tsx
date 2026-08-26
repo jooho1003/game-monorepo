@@ -3,6 +3,8 @@ import { getItemPresentation } from "../../config/items.js";
 import {
   HP_REGEN_PER_MINUTE,
   MP_REGEN_PER_MINUTE,
+  RESONANCE_MP_REFUND,
+  SKILL_NODE_REQUIREMENTS,
 } from "../../domain/engine.js";
 import { useGameStore } from "../../store/game-store.js";
 
@@ -54,14 +56,13 @@ export function GamePanels({
 
 function SkillTree() {
   const weaponId = useGameStore((state) => state.snapshot.weapon);
-  const level = useGameStore((state) => state.snapshot.level);
   const skillPoints = useGameStore((state) => state.snapshot.skillPoints);
   const skillUnlocked = useGameStore((state) => state.snapshot.skillUnlocked);
   const weapon = getWeaponDefinition(weaponId);
   return (
     <div className="skill-tree">
       <div className="skill-tree__summary">
-        <p>스킬에 마우스를 올리거나 Tab으로 선택하면 상세 설명을 확인할 수 있습니다.</p>
+        <p>레벨 조건을 채운 스킬은 클릭하면 스킬 포인트 1로 해금됩니다.</p>
         <span>보유 스킬 포인트</span>
         <strong>{skillPoints}</strong>
       </div>
@@ -88,47 +89,121 @@ function SkillTree() {
           </div>
         </article>
         <b aria-hidden="true" />
-        <article
-          className={level >= 3 ? "is-unlocked" : "is-locked"}
-          tabIndex={0}
-          aria-describedby="focus-skill-tooltip"
-        >
-          <i>Ⅱ</i>
-          <strong>집중 강화</strong>
-          <span>Lv.3 · 주력 스킬 피해 강화</span>
-          <div
-            className="skill-tooltip"
-            id="focus-skill-tooltip"
-            role="tooltip"
-          >
-            <em>패시브 강화</em>
-            <strong>집중 강화</strong>
-            <p>선택한 무기의 주력 스킬 피해량을 20% 높입니다.</p>
-            <small>해금 조건 · Lv.3</small>
-          </div>
-        </article>
+        <SecondSkillNode />
         <b aria-hidden="true" />
-        <article
-          className={level >= 5 ? "is-unlocked" : "is-locked"}
-          tabIndex={0}
-          aria-describedby="resonance-skill-tooltip"
-        >
-          <i>Ⅲ</i>
-          <strong>탑의 공명</strong>
-          <span>Lv.5 · 마력 회복과 범위 강화</span>
-          <div
-            className="skill-tooltip"
-            id="resonance-skill-tooltip"
-            role="tooltip"
-          >
-            <em>패시브 강화</em>
-            <strong>탑의 공명</strong>
-            <p>스킬 범위를 넓히고 사용 직후 마력을 일부 회복합니다.</p>
-            <small>해금 조건 · Lv.5</small>
-          </div>
-        </article>
+        <ThirdSkillNode />
       </div>
     </div>
+  );
+}
+
+function ThirdSkillNode() {
+  const weaponId = useGameStore((state) => state.snapshot.weapon);
+  const level = useGameStore((state) => state.snapshot.level);
+  const skillPoints = useGameStore((state) => state.snapshot.skillPoints);
+  const unlocked = useGameStore(
+    (state) => state.snapshot.resonanceUnlocked,
+  );
+  const dispatch = useGameStore((state) => state.dispatch);
+  const weapon = getWeaponDefinition(weaponId);
+  const requirement = SKILL_NODE_REQUIREMENTS.resonance;
+  const levelMet = level >= requirement.level;
+  const available = !unlocked && levelMet;
+  const status = unlocked
+    ? `사용 가능 · 숫자 3 · MP ${weapon.thirdSkillManaCost}`
+    : !levelMet
+      ? `Lv.${requirement.level} 필요 · ${weapon.thirdSkillEffect}`
+      : skillPoints > 0
+        ? "클릭하여 해금 · 스킬 포인트 1"
+        : "스킬 포인트가 부족합니다";
+  const unlockNode = () => {
+    if (!available) return;
+    dispatch({ type: "UNLOCK_SKILL_NODE", node: "resonance" });
+  };
+  return (
+    <article
+      className={
+        unlocked ? "is-unlocked" : available ? "is-available" : "is-locked"
+      }
+      tabIndex={0}
+      role={available ? "button" : undefined}
+      aria-describedby="third-skill-tooltip"
+      onClick={unlockNode}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        unlockNode();
+      }}
+    >
+      <img className="skill-tree__icon" src={weapon.thirdSkillIcon} alt="" />
+      <strong>{weapon.thirdSkill}</strong>
+      <span>{status}</span>
+      <div className="skill-tooltip" id="third-skill-tooltip" role="tooltip">
+        <em>Ⅲ · 무기 액티브</em>
+        <strong>{weapon.thirdSkill}</strong>
+        <p>
+          {weapon.thirdSkillDescription} 해금 시 주력 스킬 범위가 15% 넓어지고
+          사용 후 MP {RESONANCE_MP_REFUND}을 회복합니다.
+        </p>
+        <small>
+          {weapon.thirdSkillEffect} · 해금 조건 Lv.{requirement.level}
+        </small>
+      </div>
+    </article>
+  );
+}
+
+function SecondSkillNode() {
+  const weaponId = useGameStore((state) => state.snapshot.weapon);
+  const level = useGameStore((state) => state.snapshot.level);
+  const skillPoints = useGameStore((state) => state.snapshot.skillPoints);
+  const unlocked = useGameStore((state) => state.snapshot.focusUnlocked);
+  const dispatch = useGameStore((state) => state.dispatch);
+  const weapon = getWeaponDefinition(weaponId);
+  const requirement = SKILL_NODE_REQUIREMENTS.focus;
+  const levelMet = level >= requirement.level;
+  const available = !unlocked && levelMet;
+  const status = unlocked
+    ? `사용 가능 · 숫자 2 · MP ${weapon.secondSkillManaCost}`
+    : !levelMet
+      ? `Lv.${requirement.level} 필요 · ${weapon.secondSkillEffect}`
+      : skillPoints > 0
+        ? "클릭하여 해금 · 스킬 포인트 1"
+        : "스킬 포인트가 부족합니다";
+  const unlockNode = () => {
+    if (!available) return;
+    dispatch({ type: "UNLOCK_SKILL_NODE", node: "focus" });
+  };
+  return (
+    <article
+      className={
+        unlocked ? "is-unlocked" : available ? "is-available" : "is-locked"
+      }
+      tabIndex={0}
+      role={available ? "button" : undefined}
+      aria-describedby="second-skill-tooltip"
+      onClick={unlockNode}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        unlockNode();
+      }}
+    >
+      <img className="skill-tree__icon" src={weapon.secondSkillIcon} alt="" />
+      <strong>{weapon.secondSkill}</strong>
+      <span>{status}</span>
+      <div className="skill-tooltip" id="second-skill-tooltip" role="tooltip">
+        <em>Ⅱ · 무기 액티브</em>
+        <strong>{weapon.secondSkill}</strong>
+        <p>
+          {weapon.secondSkillDescription} 해금 시 주력 스킬과 세 번째 스킬의
+          피해도 20% 증가합니다.
+        </p>
+        <small>
+          {weapon.secondSkillEffect} · 해금 조건 Lv.{requirement.level}
+        </small>
+      </div>
+    </article>
   );
 }
 

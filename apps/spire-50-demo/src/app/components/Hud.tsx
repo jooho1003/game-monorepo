@@ -25,6 +25,12 @@ export function Hud() {
   const objective = useGameStore((state) => state.snapshot.objective);
   const notice = useGameStore((state) => state.snapshot.notice);
   const skillUnlocked = useGameStore((state) => state.snapshot.skillUnlocked);
+  const secondSkillUnlocked = useGameStore(
+    (state) => state.snapshot.focusUnlocked,
+  );
+  const thirdSkillUnlocked = useGameStore(
+    (state) => state.snapshot.resonanceUnlocked,
+  );
   const weaponId = useGameStore((state) => state.snapshot.weapon);
   const weapon = getWeaponDefinition(weaponId);
 
@@ -69,6 +75,30 @@ export function Hud() {
           <span>
             <strong>{skillUnlocked ? weapon.skill : "잠김"}</strong>
             <small>{skillUnlocked ? "MP 25" : "관리자 대화"}</small>
+          </span>
+        </div>
+        <div className={secondSkillUnlocked ? "is-ready" : "is-locked"}>
+          <kbd>2</kbd>
+          <img src={weapon.secondSkillIcon} alt="" />
+          <span>
+            <strong>{secondSkillUnlocked ? weapon.secondSkill : "잠김"}</strong>
+            <small>
+              {secondSkillUnlocked
+                ? `MP ${weapon.secondSkillManaCost}`
+                : "Lv.3 스킬 트리"}
+            </small>
+          </span>
+        </div>
+        <div className={thirdSkillUnlocked ? "is-ready" : "is-locked"}>
+          <kbd>3</kbd>
+          <img src={weapon.thirdSkillIcon} alt="" />
+          <span>
+            <strong>{thirdSkillUnlocked ? weapon.thirdSkill : "잠김"}</strong>
+            <small>
+              {thirdSkillUnlocked
+                ? `MP ${weapon.thirdSkillManaCost}`
+                : "Lv.5 스킬 트리"}
+            </small>
           </span>
         </div>
       </section>

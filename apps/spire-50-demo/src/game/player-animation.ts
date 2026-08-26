@@ -46,7 +46,7 @@ const MIRRORED_DIRECTION: Partial<Record<PlayerDirection, PlayerDirection>> = {
 };
 
 export function playerActionTextureKey(
-  action: "attack" | "skill",
+  action: "attack" | "skill" | "skill2" | "skill3",
   weaponId: WeaponId,
   direction: PlayerDirection,
   frame: number,
@@ -55,18 +55,14 @@ export function playerActionTextureKey(
 }
 
 export function playerActionTextureFrame(
-  action: "attack" | "skill",
+  action: "attack" | "skill" | "skill2" | "skill3",
   weaponId: WeaponId,
   direction: PlayerDirection,
   frame: number,
 ): PlayerTextureFrame {
-  const sourceDirection =
-    action === "skill"
-      ? (MIRRORED_DIRECTION[direction] ?? direction)
-      : direction;
   return {
-    key: playerActionTextureKey(action, weaponId, sourceDirection, frame),
-    flipX: sourceDirection !== direction,
+    key: playerActionTextureKey(action, weaponId, direction, frame),
+    flipX: false,
   };
 }
 

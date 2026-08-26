@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createInitialSnapshot,
+  RESONANCE_MP_REFUND,
   transition,
   wandererRoleFromSeed,
 } from "./engine.js";
@@ -163,5 +164,130 @@ describe("deterministic run shell", () => {
         reason: "timeout",
       }).snapshot,
     ).toBe(initial);
+  });
+});
+
+describe("skill node unlocks", () => {
+  it("spends one skill point to unlock a node when the level is met", () => {
+    const ready = { ...createInitialSnapshot(), level: 3, skillPoints: 2 };
+    const result = transition(ready, {
+      type: "UNLOCK_SKILL_NODE",
+      node: "focus",
+    });
+
+    expect(result.snapshot.focusUnlocked).toBe(true);
+    expect(result.snapshot.skillPoints).toBe(1);
+    expect(result.events).toContainEqual({
+      type: "skill-node-unlocked",
+      node: "focus",
+    });
+  });
+
+  it("refuses to unlock below the required level", () => {
+    const early = { ...createInitialSnapshot(), level: 2, skillPoints: 3 };
+    const result = transition(early, {
+      type: "UNLOCK_SKILL_NODE",
+      node: "focus",
+    }).snapshot;
+
+    expect(result.focusUnlocked).toBe(false);
+    expect(result.skillPoints).toBe(3);
+    expect(result.notice).toBe("두 번째 스킬 해금에는 레벨 3이 필요합니다.");
+  });
+
+  it("refuses to unlock without a skill point", () => {
+    const broke = { ...createInitialSnapshot(), level: 5, skillPoints: 0 };
+    const result = transition(broke, {
+      type: "UNLOCK_SKILL_NODE",
+      node: "resonance",
+    }).snapshot;
+
+    expect(result.resonanceUnlocked).toBe(false);
+    expect(result.notice).toBe("스킬 포인트가 부족합니다.");
+  });
+
+  it("does not charge again for an already unlocked node", () => {
+    const unlocked = {
+      ...createInitialSnapshot(),
+      level: 3,
+      skillPoints: 1,
+      focusUnlocked: true,
+    };
+    const result = transition(unlocked, {
+      type: "UNLOCK_SKILL_NODE",
+      node: "focus",
+    }).snapshot;
+
+    expect(result.skillPoints).toBe(1);
+    expect(result.notice).toBe("이미 해금된 스킬입니다.");
+  });
+
+  it("refunds mana on skill use once resonance is unlocked", () => {
+    const attuned = {
+      ...createInitialSnapshot(),
+      skillUnlocked: true,
+      resonanceUnlocked: true,
+      mp: 50,
+    };
+    const used = transition(attuned, {
+      type: "USE_SKILL",
+      manaCost: 25,
+    }).snapshot;
+
+    expect(used.mp).toBe(50 - 25 + RESONANCE_MP_REFUND);
+  });
+
+  it("requires the third node before spending mana on a third skill", () => {
+    const locked = { ...createInitialSnapshot(), skillUnlocked: true, mp: 80 };
+    const result = transition(locked, {
+      type: "USE_THIRD_SKILL",
+      manaCost: 45,
+    });
+
+    expect(result.snapshot.mp).toBe(80);
+    expect(result.events).toEqual([]);
+    expect(result.snapshot.notice).toContain("세 번째 스킬");
+  });
+
+  it("requires the focus node before spending mana on a second skill", () => {
+    const locked = { ...createInitialSnapshot(), skillUnlocked: true, mp: 80 };
+    const result = transition(locked, {
+      type: "USE_SECOND_SKILL",
+      manaCost: 32,
+    });
+
+    expect(result.snapshot.mp).toBe(80);
+    expect(result.events).toEqual([]);
+    expect(result.snapshot.notice).toContain("두 번째 스킬");
+  });
+
+  it("spends the configured mana and emits the second-skill event", () => {
+    const unlocked = {
+      ...createInitialSnapshot(),
+      focusUnlocked: true,
+      mp: 80,
+    };
+    const result = transition(unlocked, {
+      type: "USE_SECOND_SKILL",
+      manaCost: 32,
+    });
+
+    expect(result.snapshot.mp).toBe(48);
+    expect(result.events).toEqual([{ type: "second-skill-used" }]);
+  });
+
+  it("spends the configured mana and emits the third-skill event", () => {
+    const unlocked = {
+      ...createInitialSnapshot(),
+      resonanceUnlocked: true,
+      mp: 80,
+    };
+    const result = transition(unlocked, {
+      type: "USE_THIRD_SKILL",
+      manaCost: 45,
+    });
+
+    expect(result.snapshot.mp).toBe(35);
+    expect(result.events).toEqual([{ type: "third-skill-used" }]);
   });
 });

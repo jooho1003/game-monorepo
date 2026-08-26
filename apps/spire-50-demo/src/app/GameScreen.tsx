@@ -96,7 +96,7 @@ export function GameScreen() {
         <span>WASD 이동</span>
         <span>이동키 2회 대시</span>
         <span>우클릭 커서 방향 공격</span>
-        <span>1 스킬</span>
+        <span>1 주력 스킬 · 2 두 번째 스킬 · 3 세 번째 스킬</span>
         <span>Z 회수</span>
         <span>포탈 위 W</span>
         {zone === "battle" && floor === 5 ? (

@@ -13,27 +13,39 @@ import {
 } from "./player-animation.js";
 
 describe("player directional action textures", () => {
-  it("uses authored attacks and mirrors skills symmetrically on the west side", () => {
+  it("uses every authored action direction without swapping east and west", () => {
     for (const weaponId of weaponIds) {
       expect(playerActionTextureFrame("attack", weaponId, "west", 1)).toEqual({
         key: `player-attack-${weaponId}-west-1`,
         flipX: false,
       });
       expect(playerActionTextureFrame("skill", weaponId, "west", 1)).toEqual({
-        key: `player-skill-${weaponId}-east-1`,
-        flipX: true,
+        key: `player-skill-${weaponId}-west-1`,
+        flipX: false,
       });
       expect(
         playerActionTextureFrame("skill", weaponId, "north-west", 1),
       ).toEqual({
-        key: `player-skill-${weaponId}-north-east-1`,
-        flipX: true,
+        key: `player-skill-${weaponId}-north-west-1`,
+        flipX: false,
       });
       expect(
         playerActionTextureFrame("skill", weaponId, "south-west", 1),
       ).toEqual({
-        key: `player-skill-${weaponId}-south-east-1`,
-        flipX: true,
+        key: `player-skill-${weaponId}-south-west-1`,
+        flipX: false,
+      });
+      expect(
+        playerActionTextureFrame("skill2", weaponId, "west", 1),
+      ).toEqual({
+        key: `player-skill2-${weaponId}-west-1`,
+        flipX: false,
+      });
+      expect(
+        playerActionTextureFrame("skill3", weaponId, "west", 1),
+      ).toEqual({
+        key: `player-skill3-${weaponId}-west-1`,
+        flipX: false,
       });
     }
   });
@@ -44,6 +56,12 @@ describe("player directional action textures", () => {
     );
     expect(playerActionTextureKey("skill", "staff", "north", 1)).toBe(
       "player-skill-staff-north-1",
+    );
+    expect(playerActionTextureKey("skill2", "staff", "north", 1)).toBe(
+      "player-skill2-staff-north-1",
+    );
+    expect(playerActionTextureKey("skill3", "staff", "north", 1)).toBe(
+      "player-skill3-staff-north-1",
     );
   });
 

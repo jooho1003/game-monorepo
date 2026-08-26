@@ -13,6 +13,12 @@ export interface TransitionResult {
 
 export const HP_REGEN_PER_MINUTE = 6;
 export const MP_REGEN_PER_MINUTE = 12;
+export const RESONANCE_MP_REFUND = 8;
+
+export const SKILL_NODE_REQUIREMENTS = {
+  focus: { level: 3, name: "두 번째 스킬" },
+  resonance: { level: 5, name: "세 번째 스킬" },
+} as const;
 
 export function experienceRequiredForLevel(level: number): number {
   return 100 + Math.max(0, level - 1) * 45;
@@ -53,6 +59,8 @@ export function createInitialSnapshot(): GameSnapshot {
       },
     ],
     skillUnlocked: false,
+    focusUnlocked: false,
+    resonanceUnlocked: false,
     dialogueOpen: false,
     dialogueIndex: 0,
     seed: 0,
@@ -209,11 +217,101 @@ export function transition(
       return {
         snapshot: {
           ...snapshot,
-          mp: clamp(snapshot.mp - command.manaCost, 0, 100),
-          notice: "스킬을 사용했습니다.",
+          mp: clamp(
+            snapshot.mp -
+              command.manaCost +
+              (snapshot.resonanceUnlocked ? RESONANCE_MP_REFUND : 0),
+            0,
+            100,
+          ),
+          notice: snapshot.resonanceUnlocked
+            ? `스킬을 사용했습니다. 탑의 공명으로 마력 ${RESONANCE_MP_REFUND}을 회복했습니다.`
+            : "스킬을 사용했습니다.",
         },
         events: [{ type: "skill-used" }],
       };
+
+    case "USE_THIRD_SKILL":
+      if (!snapshot.resonanceUnlocked || snapshot.mp < command.manaCost) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: snapshot.resonanceUnlocked
+              ? "마력이 부족합니다."
+              : "스킬 트리에서 세 번째 스킬을 먼저 해금하세요.",
+          },
+          events: [],
+        };
+      }
+      return {
+        snapshot: {
+          ...snapshot,
+          mp: clamp(snapshot.mp - command.manaCost, 0, 100),
+          notice: "세 번째 스킬을 사용했습니다.",
+        },
+        events: [{ type: "third-skill-used" }],
+      };
+
+    case "USE_SECOND_SKILL":
+      if (!snapshot.focusUnlocked || snapshot.mp < command.manaCost) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: snapshot.focusUnlocked
+              ? "마력이 부족합니다."
+              : "스킬 트리에서 두 번째 스킬을 먼저 해금하세요.",
+          },
+          events: [],
+        };
+      }
+      return {
+        snapshot: {
+          ...snapshot,
+          mp: clamp(snapshot.mp - command.manaCost, 0, 100),
+          notice: "두 번째 스킬을 사용했습니다.",
+        },
+        events: [{ type: "second-skill-used" }],
+      };
+
+    case "UNLOCK_SKILL_NODE": {
+      const requirement = SKILL_NODE_REQUIREMENTS[command.node];
+      const alreadyUnlocked =
+        command.node === "focus"
+          ? snapshot.focusUnlocked
+          : snapshot.resonanceUnlocked;
+      if (alreadyUnlocked) {
+        return {
+          snapshot: { ...snapshot, notice: "이미 해금된 스킬입니다." },
+          events: [],
+        };
+      }
+      if (snapshot.level < requirement.level) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: `${requirement.name} 해금에는 레벨 ${requirement.level}이 필요합니다.`,
+          },
+          events: [],
+        };
+      }
+      if (snapshot.skillPoints < 1) {
+        return {
+          snapshot: { ...snapshot, notice: "스킬 포인트가 부족합니다." },
+          events: [],
+        };
+      }
+      return {
+        snapshot: {
+          ...snapshot,
+          skillPoints: snapshot.skillPoints - 1,
+          focusUnlocked: command.node === "focus" ? true : snapshot.focusUnlocked,
+          resonanceUnlocked:
+            command.node === "resonance" ? true : snapshot.resonanceUnlocked,
+          notice: `${requirement.name} 해금 · 스킬 포인트 1을 사용했습니다.`,
+        },
+        events: [{ type: "skill-node-unlocked", node: command.node }],
+      };
+    }
 
     case "RECOVER_RESOURCES": {
       const elapsedMinutes = Math.max(0, command.elapsedMs) / 60_000;

@@ -50,6 +50,104 @@ export const WEAPON_COMBAT: Readonly<Record<WeaponId, WeaponCombatProfile>> = {
   },
 };
 
+export interface SecondSkillCombatProfile {
+  cooldown: number;
+  range: number;
+  damage: number;
+  hitRadius: number;
+  knockback: number;
+}
+
+export const SECOND_SKILL_COMBAT: Readonly<
+  Record<WeaponId, SecondSkillCombatProfile>
+> = {
+  longsword: {
+    cooldown: 2200,
+    range: 190,
+    damage: 62,
+    hitRadius: 34,
+    knockback: 38,
+  },
+  dagger: {
+    cooldown: 2000,
+    range: 150,
+    damage: 68,
+    hitRadius: 78,
+    knockback: 28,
+  },
+  shield: {
+    cooldown: 2600,
+    range: 96,
+    damage: 52,
+    hitRadius: 92,
+    knockback: 76,
+  },
+  bow: {
+    cooldown: 2600,
+    range: 360,
+    damage: 58,
+    hitRadius: 92,
+    knockback: 22,
+  },
+  staff: {
+    cooldown: 2800,
+    range: 330,
+    damage: 64,
+    hitRadius: 108,
+    knockback: 30,
+  },
+};
+
+export interface ThirdSkillCombatProfile {
+  cooldown: number;
+  range: number;
+  damage: number;
+  hitRadius: number;
+  knockback: number;
+  halfAngle?: number;
+}
+
+export const THIRD_SKILL_COMBAT: Readonly<
+  Record<WeaponId, ThirdSkillCombatProfile>
+> = {
+  longsword: {
+    cooldown: 3800,
+    range: 220,
+    damage: 86,
+    hitRadius: 0,
+    knockback: 62,
+    halfAngle: 1.16,
+  },
+  dagger: {
+    cooldown: 3400,
+    range: 300,
+    damage: 98,
+    hitRadius: 38,
+    knockback: 34,
+  },
+  shield: {
+    cooldown: 4200,
+    range: 126,
+    damage: 74,
+    hitRadius: 116,
+    knockback: 108,
+  },
+  bow: {
+    cooldown: 4000,
+    range: 620,
+    damage: 108,
+    hitRadius: 24,
+    knockback: 46,
+  },
+  staff: {
+    cooldown: 4400,
+    range: 520,
+    damage: 94,
+    hitRadius: 58,
+    knockback: 40,
+  },
+};
+
 export interface CircleTarget {
   x: number;
   y: number;
