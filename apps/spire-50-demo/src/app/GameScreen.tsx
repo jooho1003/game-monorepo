@@ -10,6 +10,7 @@ import {
   FifthFloorMissionOverlay,
   MissionFailureOverlay,
 } from "./components/FifthFloorMissionOverlay.js";
+import { PauseMenu } from "./components/PauseMenu.js";
 import { ShopPanel } from "./components/ShopPanel.js";
 
 export function GameScreen() {
@@ -20,6 +21,8 @@ export function GameScreen() {
   const mission = useGameStore((state) => state.fifthFloorMission);
   const setUiOverlayOpen = useGameStore((state) => state.setUiOverlayOpen);
   const [openPanel, setOpenPanel] = useState<GamePanelId | null>(null);
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [shopHidden, setShopHidden] = useState(false);
 
   useEffect(() => {
     setMusicContext(zone === "battle" && floor === 5 ? "boss" : zone);
@@ -46,29 +49,46 @@ export function GameScreen() {
       const requestedPanel = panelByKey[key];
       if (requestedPanel) {
         event.preventDefault();
-        if (mission?.status === "active") return;
+        if (mission?.status === "active" || pauseOpen) return;
         setOpenPanel((current) =>
           current === requestedPanel ? null : requestedPanel,
         );
         return;
       }
       if (event.key === "Escape") {
-        if (openPanel) setOpenPanel(null);
-        else dispatch({ type: "RETURN_TITLE" });
+        event.preventDefault();
+        if (pauseOpen) {
+          setPauseOpen(false);
+          return;
+        }
+        if (openPanel) {
+          setOpenPanel(null);
+          return;
+        }
+        if (zone === "shop" && !shopHidden && !dialogueOpen) {
+          setShopHidden(true);
+          return;
+        }
+        if (dialogueOpen) return;
+        setPauseOpen(true);
       }
     };
     window.addEventListener("keydown", handleGameKeys);
     return () => window.removeEventListener("keydown", handleGameKeys);
-  }, [dispatch, mission?.status, openPanel]);
+  }, [dialogueOpen, mission?.status, openPanel, pauseOpen, shopHidden, zone]);
 
   useEffect(() => {
     if (mission?.status === "active") setOpenPanel(null);
   }, [mission?.status]);
 
   useEffect(() => {
-    setUiOverlayOpen(openPanel !== null);
+    setShopHidden(false);
+  }, [zone]);
+
+  useEffect(() => {
+    setUiOverlayOpen(openPanel !== null || pauseOpen);
     return () => setUiOverlayOpen(false);
-  }, [openPanel, setUiOverlayOpen]);
+  }, [openPanel, pauseOpen, setUiOverlayOpen]);
 
   useEffect(() => {
     let lastRecoveryAt = Date.now();
@@ -94,10 +114,11 @@ export function GameScreen() {
       <FifthFloorMissionOverlay />
       <MissionFailureOverlay />
       {dialogueOpen ? <DialogueOverlay /> : null}
-      {zone === "shop" && !dialogueOpen ? <ShopPanel /> : null}
+      {zone === "shop" && !dialogueOpen && !shopHidden ? <ShopPanel /> : null}
       {openPanel ? (
         <GamePanels panel={openPanel} onClose={() => setOpenPanel(null)} />
       ) : null}
+      {pauseOpen ? <PauseMenu onClose={() => setPauseOpen(false)} /> : null}
       <div className="game-screen__footer">
         <span>WASD 이동</span>
         <span>이동키 2회 대시</span>

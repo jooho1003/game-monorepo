@@ -2632,6 +2632,61 @@ html[data-capture-hud="clean"] .skill-slot {
   cursor: pointer;
 }
 
+.pause-menu {
+  display: grid;
+  gap: 8px;
+  width: min(360px, 82vw);
+  padding: 28px 32px 24px;
+  border: 1px solid #aa9367;
+  background:
+    linear-gradient(145deg, rgb(17 29 31 / 98%), rgb(7 13 17 / 98%)), #0b1115;
+  box-shadow:
+    0 30px 90px rgb(0 0 0 / 68%),
+    inset 0 0 70px rgb(91 190 164 / 6%);
+  color: #e7ece7;
+  text-align: center;
+}
+
+.pause-menu h2 {
+  margin: 0 0 14px;
+  font-size: 26px;
+  font-weight: 400;
+}
+
+.pause-menu__actions {
+  display: grid;
+  gap: 10px;
+}
+
+.pause-menu__actions button {
+  padding: 13px 16px;
+  border: 1px solid #687b73;
+  background: #101b1e;
+  color: #d8e2dc;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.pause-menu__actions button:hover {
+  border-color: #aa9367;
+  color: #f2e9d4;
+}
+
+.pause-menu em {
+  margin-top: 8px;
+  color: #d0885f;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.pause-menu small {
+  margin-top: 10px;
+  color: #718a82;
+  font-size: 10px;
+}
+
 .skill-tree__summary {
   display: flex;
   gap: 14px;
