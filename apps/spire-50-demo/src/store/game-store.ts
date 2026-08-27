@@ -28,8 +28,14 @@ interface GameStore {
     | { id: number; type: "confirm-sacrifice" }
     | { id: number; type: "revoke-strategy" }
     | null;
+  /**
+   * 스킬/가방/상태 모달이 열려 있는지. 저장되지 않는 UI 전용 상태이며,
+   * 열려 있는 동안 월드는 멈추고 OS 커서가 다시 보입니다.
+   */
+  uiOverlayOpen: boolean;
   dispatch: (command: GameCommand) => void;
   clearEvents: () => void;
+  setUiOverlayOpen: (open: boolean) => void;
   setFifthFloorMission: (mission: FifthFloorMissionState | null) => void;
   requestFifthFloorStrategy: (stealth: boolean) => void;
   requestFifthFloorSacrificeToggle: (soldierId: number) => void;
@@ -57,6 +63,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   commandHistory: initialEnvelope?.commandHistory ?? [],
   fifthFloorMission: null,
   fifthFloorCommandRequest: null,
+  uiOverlayOpen: false,
   dispatch: (command) => {
     const state = get();
     const result = transition(state.snapshot, command);
@@ -81,6 +88,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
   clearEvents: () => set({ events: [] }),
+  setUiOverlayOpen: (uiOverlayOpen) => set({ uiOverlayOpen }),
   setFifthFloorMission: (fifthFloorMission) => set({ fifthFloorMission }),
   requestFifthFloorStrategy: (stealth) =>
     set((state) => ({

@@ -1,4 +1,9 @@
 import { clamp, createRng } from "@game/core";
+import {
+  getItemDefinition,
+  INVENTORY_SLOT_LIMIT,
+  INVENTORY_STACK_LIMIT,
+} from "./items.js";
 import type {
   GameCommand,
   GameEvent,
@@ -45,18 +50,8 @@ export function createInitialSnapshot(): GameSnapshot {
     mp: 100,
     gold: 30,
     inventory: [
-      {
-        id: "small-potion",
-        name: "작은 회복약",
-        quantity: 2,
-        description: "전투 사이에 체력을 보충하는 붉은 약입니다.",
-      },
-      {
-        id: "tower-key",
-        name: "낡은 탑 열쇠",
-        quantity: 1,
-        description: "오르반에게 받은 층계 게이트의 열쇠입니다.",
-      },
+      createInventoryEntry("small-potion", 2),
+      createInventoryEntry("tower-key", 1),
     ],
     skillUnlocked: false,
     focusUnlocked: false,
@@ -304,7 +299,8 @@ export function transition(
         snapshot: {
           ...snapshot,
           skillPoints: snapshot.skillPoints - 1,
-          focusUnlocked: command.node === "focus" ? true : snapshot.focusUnlocked,
+          focusUnlocked:
+            command.node === "focus" ? true : snapshot.focusUnlocked,
           resonanceUnlocked:
             command.node === "resonance" ? true : snapshot.resonanceUnlocked,
           notice: `${requirement.name} 해금 · 스킬 포인트 1을 사용했습니다.`,
@@ -407,8 +403,7 @@ export function transition(
       const failureNotices = {
         spotted: "외눈박이의 손에 붙잡혀 사망한 뒤 휴식처로 귀환했습니다.",
         "too-few-survivors": "탈출 병사가 6명 미만이라 임무에 실패했습니다.",
-        "gate-sealed":
-          "바위문이 닫힌 채 외눈박이가 쓰러져 출구가 막혔습니다.",
+        "gate-sealed": "바위문이 닫힌 채 외눈박이가 쓰러져 출구가 막혔습니다.",
         timeout: "5분 안에 탈출하지 못해 휴식처로 귀환했습니다.",
       } as const;
       return {
@@ -444,28 +439,137 @@ export function transition(
         events: [{ type: "gold-collected", amount: command.amount }],
       };
 
-    case "BUY_HEAL":
-      if (snapshot.gold < command.price) {
+    case "BUY_ITEM": {
+      const definition = getItemDefinition(command.itemId);
+      if (!definition || definition.price === null) {
+        return {
+          snapshot: { ...snapshot, notice: "상점에 없는 물건입니다." },
+          events: [],
+        };
+      }
+      if (snapshot.gold < definition.price) {
         return {
           snapshot: { ...snapshot, notice: "골드가 부족합니다." },
           events: [],
         };
       }
-      if (snapshot.hp >= 100) {
+
+      const owned = snapshot.inventory.find(
+        (entry) => entry.id === definition.id,
+      );
+      if (!owned && snapshot.inventory.length >= INVENTORY_SLOT_LIMIT) {
         return {
-          snapshot: { ...snapshot, notice: "이미 체력이 가득합니다." },
+          snapshot: { ...snapshot, notice: "가방에 빈 칸이 없습니다." },
           events: [],
         };
       }
+      if (owned && owned.quantity >= INVENTORY_STACK_LIMIT) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: `${definition.name}은(는) ${INVENTORY_STACK_LIMIT}개까지만 넣을 수 있습니다.`,
+          },
+          events: [],
+        };
+      }
+
+      const inventory = owned
+        ? snapshot.inventory.map((entry) =>
+            entry.id === definition.id
+              ? { ...entry, quantity: entry.quantity + 1 }
+              : entry,
+          )
+        : [
+            ...snapshot.inventory,
+            {
+              id: definition.id,
+              name: definition.name,
+              description: definition.description,
+              quantity: 1,
+            },
+          ];
+
       return {
         snapshot: {
           ...snapshot,
-          gold: snapshot.gold - command.price,
-          hp: clamp(snapshot.hp + command.amount, 0, 100),
-          notice: "따뜻한 탑차를 마시고 체력을 회복했습니다.",
+          gold: snapshot.gold - definition.price,
+          inventory,
+          notice: `${definition.name} 구매 · 가방에서 I 키로 확인하세요.`,
         },
-        events: [{ type: "notice", message: "체력이 회복되었습니다." }],
+        events: [
+          {
+            type: "item-purchased",
+            itemId: definition.id,
+            price: definition.price,
+          },
+        ],
       };
+    }
+
+    case "USE_ITEM": {
+      const definition = getItemDefinition(command.itemId);
+      const owned = snapshot.inventory.find(
+        (entry) => entry.id === command.itemId,
+      );
+      if (!definition || !owned || owned.quantity < 1) {
+        return {
+          snapshot: { ...snapshot, notice: "가지고 있지 않은 아이템입니다." },
+          events: [],
+        };
+      }
+      if (!definition.effect) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: `${definition.name}은(는) 사용할 수 없습니다.`,
+          },
+          events: [],
+        };
+      }
+
+      const hp = clamp(snapshot.hp + (definition.effect.hp ?? 0), 0, 100);
+      const mp = clamp(snapshot.mp + (definition.effect.mp ?? 0), 0, 100);
+      if (hp === snapshot.hp && mp === snapshot.mp) {
+        return {
+          snapshot: {
+            ...snapshot,
+            notice: "이미 체력과 마력이 가득합니다.",
+          },
+          events: [],
+        };
+      }
+
+      const recovered = [
+        hp > snapshot.hp ? `HP +${Math.round(hp - snapshot.hp)}` : null,
+        mp > snapshot.mp ? `MP +${Math.round(mp - snapshot.mp)}` : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(" · ");
+
+      return {
+        snapshot: {
+          ...snapshot,
+          hp,
+          mp,
+          inventory: snapshot.inventory
+            .map((entry) =>
+              entry.id === command.itemId
+                ? { ...entry, quantity: entry.quantity - 1 }
+                : entry,
+            )
+            .filter((entry) => entry.quantity > 0),
+          notice: `${definition.name} 사용 · ${recovered}`,
+        },
+        events: [
+          {
+            type: "item-used",
+            itemId: command.itemId,
+            hp: hp - snapshot.hp,
+            mp: mp - snapshot.mp,
+          },
+        ],
+      };
+    }
 
     case "RETURN_TITLE":
       return {
@@ -479,6 +583,19 @@ export function transition(
         events: [],
       };
   }
+}
+
+function createInventoryEntry(
+  id: string,
+  quantity: number,
+): GameSnapshot["inventory"][number] {
+  const definition = getItemDefinition(id);
+  return {
+    id,
+    name: definition?.name ?? id,
+    description: definition?.description ?? "정체를 알 수 없는 소지품입니다.",
+    quantity,
+  };
 }
 
 function zoneLabel(zone: GameSnapshot["zone"]): string {

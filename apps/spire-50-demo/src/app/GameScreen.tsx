@@ -18,6 +18,7 @@ export function GameScreen() {
   const dialogueOpen = useGameStore((state) => state.snapshot.dialogueOpen);
   const dispatch = useGameStore((state) => state.dispatch);
   const mission = useGameStore((state) => state.fifthFloorMission);
+  const setUiOverlayOpen = useGameStore((state) => state.setUiOverlayOpen);
   const [openPanel, setOpenPanel] = useState<GamePanelId | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,11 @@ export function GameScreen() {
   useEffect(() => {
     if (mission?.status === "active") setOpenPanel(null);
   }, [mission?.status]);
+
+  useEffect(() => {
+    setUiOverlayOpen(openPanel !== null);
+    return () => setUiOverlayOpen(false);
+  }, [openPanel, setUiOverlayOpen]);
 
   useEffect(() => {
     let lastRecoveryAt = Date.now();

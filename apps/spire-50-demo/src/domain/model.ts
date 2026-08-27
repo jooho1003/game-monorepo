@@ -86,7 +86,8 @@ export type GameCommand =
     }
   | { type: "ACK_MISSION_RESULT" }
   | { type: "COLLECT_GOLD"; amount: number }
-  | { type: "BUY_HEAL"; price: number; amount: number }
+  | { type: "BUY_ITEM"; itemId: string }
+  | { type: "USE_ITEM"; itemId: string }
   | { type: "RETURN_TITLE" };
 
 export type GameEvent =
@@ -106,7 +107,9 @@ export type GameEvent =
       type: "mission-failed";
       reason: "timeout" | "spotted" | "too-few-survivors" | "gate-sealed";
     }
-  | { type: "gold-collected"; amount: number };
+  | { type: "gold-collected"; amount: number }
+  | { type: "item-purchased"; itemId: string; price: number }
+  | { type: "item-used"; itemId: string; hp: number; mp: number };
 
 export const commandRecordSchema = z.object({
   type: z.string(),
