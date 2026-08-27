@@ -669,13 +669,19 @@ export class PlayScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    const snapshot = useGameStore.getState().snapshot;
+    const state = useGameStore.getState();
+    const snapshot = state.snapshot;
     if (snapshot.zone !== this.renderedZone) {
       this.zone = snapshot.zone;
       this.scene.restart();
       return;
     }
-    if (snapshot.dialogueOpen) {
+
+    // 대화창과 스킬/가방/상태 모달이 열려 있는 동안에는 조준 커서를 감추고
+    // OS 커서를 되돌려 줘야 패널의 버튼을 누를 수 있습니다.
+    const overlayOpen = snapshot.dialogueOpen || state.uiOverlayOpen;
+    this.input.setDefaultCursor(overlayOpen ? "default" : "none");
+    if (overlayOpen) {
       this.aimCursor.setVisible(false);
       return;
     }
@@ -4642,21 +4648,14 @@ export class PlayScene extends Phaser.Scene {
         0xf0c97b,
       );
       this.dashPlayer(angle, profile.range);
-      this.playWeaponArtVfx(
-        weaponId,
-        3,
-        this.player.x,
-        this.player.y,
-        angle,
-        {
-          width: 650,
-          duration: 680,
-          startScale: 0.18,
-          endScale: 1.16,
-          echo: true,
-          fragments: 24,
-        },
-      );
+      this.playWeaponArtVfx(weaponId, 3, this.player.x, this.player.y, angle, {
+        width: 650,
+        duration: 680,
+        startScale: 0.18,
+        endScale: 1.16,
+        echo: true,
+        fragments: 24,
+      });
       this.damageEnemies(
         this.player.x,
         this.player.y,
