@@ -278,6 +278,14 @@ const WEAPON_IDS: readonly WeaponId[] = [
   "staff",
 ];
 
+const WEAPON_VFX_COLORS: Record<WeaponId, number> = {
+  longsword: 0x63eaff,
+  dagger: 0xc58aff,
+  shield: 0xffc14d,
+  bow: 0x9dff4f,
+  staff: 0x5ba8ff,
+};
+
 const SKILL_POSE_DURATIONS: Record<WeaponId, number> = {
   longsword: 520,
   dagger: 360,
@@ -447,6 +455,12 @@ export class PlayScene extends Phaser.Scene {
         `world-weapon-${weaponId}`,
         `/assets/game/world/weapons/${weaponId}.png`,
       );
+      for (const skillIndex of [1, 2, 3] as const) {
+        this.load.image(
+          `weapon-vfx-${weaponId}-skill${skillIndex}`,
+          `/assets/game/world/vfx/skills-v2/${weaponId}-skill${skillIndex}.png`,
+        );
+      }
     }
     for (const actor of ACTOR_KINDS) {
       for (const direction of ACTOR_DIRECTIONS) {
@@ -4184,6 +4198,14 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "longsword") {
+      this.playWeaponArtVfx(
+        weaponId,
+        1,
+        this.player.x + Math.cos(angle) * 72,
+        this.player.y + Math.sin(angle) * 72,
+        angle,
+        { width: 380, duration: 390, echo: true, fragments: 12 },
+      );
       this.playLongswordSkillEffect(angle, 0x8ce6d0);
       this.damageEnemiesInCone(
         this.player.x,
@@ -4198,6 +4220,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "dagger") {
+      this.playWeaponArtVfx(
+        weaponId,
+        1,
+        this.player.x + Math.cos(angle) * 108,
+        this.player.y + Math.sin(angle) * 108,
+        angle,
+        {
+          width: 430,
+          duration: 300,
+          startScale: 0.56,
+          echo: true,
+          fragments: 10,
+        },
+      );
       this.playShadowDashEffect(angle, 225 * rangeBoost, 0xdf9df3);
       this.damageEnemiesAlongLine(
         this.player.x,
@@ -4212,6 +4248,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "shield") {
+      this.playWeaponArtVfx(
+        weaponId,
+        1,
+        this.player.x + Math.cos(angle) * 42,
+        this.player.y + Math.sin(angle) * 42,
+        angle,
+        {
+          width: 390,
+          duration: 460,
+          startScale: 0.42,
+          echo: true,
+          fragments: 14,
+        },
+      );
       this.playGuardianImpactEffect(angle, 145 * rangeBoost, 0xf0c97b);
       this.damageEnemies(
         this.player.x,
@@ -4227,7 +4277,23 @@ export class PlayScene extends Phaser.Scene {
     if (weaponId === "bow") {
       this.playBowVolleyCharge(angle, 0xa9db7e);
       for (const [index, offset] of [-0.18, 0, 0.18].entries()) {
-        this.time.delayedCall(205 + index * 34, () =>
+        this.time.delayedCall(205 + index * 34, () => {
+          if (index === 0) {
+            this.playWeaponArtVfx(
+              weaponId,
+              1,
+              this.player.x + Math.cos(angle) * 178,
+              this.player.y + Math.sin(angle) * 178,
+              angle,
+              {
+                width: 470,
+                duration: 430,
+                startScale: 0.48,
+                echo: true,
+                fragments: 9,
+              },
+            );
+          }
           this.launchArrow(
             angle + offset,
             440 * rangeBoost,
@@ -4235,8 +4301,8 @@ export class PlayScene extends Phaser.Scene {
             0xa9db7e,
             15,
             true,
-          ),
-        );
+          );
+        });
       }
       return;
     }
@@ -4250,6 +4316,20 @@ export class PlayScene extends Phaser.Scene {
       ),
       80,
       340,
+    );
+    this.playWeaponArtVfx(
+      weaponId,
+      1,
+      this.player.x + Math.cos(angle) * targetDistance,
+      this.player.y + Math.sin(angle) * targetDistance,
+      angle,
+      {
+        width: 430,
+        duration: 620,
+        startScale: 0.34,
+        echo: true,
+        fragments: 14,
+      },
     );
     this.castStarfall(angle, targetDistance, profile.color, {
       damageBoost,
@@ -4319,6 +4399,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "longsword") {
+      this.playWeaponArtVfx(
+        weaponId,
+        2,
+        this.player.x + Math.cos(angle) * profile.range * 0.5,
+        this.player.y + Math.sin(angle) * profile.range * 0.5,
+        angle,
+        {
+          width: 500,
+          duration: 420,
+          startScale: 0.36,
+          echo: true,
+          fragments: 15,
+        },
+      );
       this.playFlashBreakthroughEffect(angle, profile.range, 0x8ce6d0);
       this.damageEnemiesAlongLine(
         this.player.x,
@@ -4335,6 +4429,14 @@ export class PlayScene extends Phaser.Scene {
     if (weaponId === "dagger") {
       const hitX = this.player.x + Math.cos(angle) * 76;
       const hitY = this.player.y + Math.sin(angle) * 76;
+      this.playWeaponArtVfx(weaponId, 2, hitX, hitY, angle, {
+        width: 430,
+        duration: 360,
+        startScale: 0.38,
+        rotationOffset: -0.08,
+        echo: true,
+        fragments: 13,
+      });
       this.playTwinShadowFlurryEffect(angle, 0xdf9df3);
       this.damageEnemies(
         hitX,
@@ -4349,6 +4451,13 @@ export class PlayScene extends Phaser.Scene {
     if (weaponId === "shield") {
       const hitX = this.player.x + Math.cos(angle) * 58;
       const hitY = this.player.y + Math.sin(angle) * 58;
+      this.playWeaponArtVfx(weaponId, 2, hitX, hitY, angle, {
+        width: 470,
+        duration: 520,
+        startScale: 0.3,
+        echo: true,
+        fragments: 16,
+      });
       this.playGuardianBarrierEffect(angle, 0xf0c97b);
       this.damageEnemies(
         hitX,
@@ -4362,6 +4471,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "bow") {
+      this.playWeaponArtVfx(
+        weaponId,
+        2,
+        (this.player.x + targetX) / 2,
+        (this.player.y + targetY) / 2,
+        angle,
+        {
+          width: 520,
+          duration: 520,
+          startScale: 0.4,
+          echo: true,
+          fragments: 12,
+        },
+      );
       this.playBindingArrowRainEffect(targetX, targetY, 0xa9db7e);
       this.time.delayedCall(210, () =>
         this.damageEnemies(
@@ -4375,6 +4498,14 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
 
+    this.playWeaponArtVfx(weaponId, 2, targetX, targetY, angle, {
+      width: 500,
+      duration: 680,
+      startScale: 0.24,
+      rotationOffset: -0.22,
+      echo: true,
+      fragments: 16,
+    });
     this.playNebulaBurstEffect(targetX, targetY, 0x87b9ff);
     this.time.delayedCall(180, () =>
       this.damageEnemies(
@@ -4443,6 +4574,21 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "longsword") {
+      this.playWeaponArtVfx(
+        weaponId,
+        3,
+        this.player.x + Math.cos(angle) * 96,
+        this.player.y + Math.sin(angle) * 96,
+        angle,
+        {
+          width: 650,
+          duration: 620,
+          startScale: 0.26,
+          endScale: 1.12,
+          echo: true,
+          fragments: 22,
+        },
+      );
       this.playBladeStormEffect(angle, profile.range, 0x8ce6d0);
       this.damageEnemiesInCone(
         this.player.x,
@@ -4457,6 +4603,21 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (weaponId === "dagger") {
+      this.playWeaponArtVfx(
+        weaponId,
+        3,
+        this.player.x + Math.cos(angle) * profile.range * 0.48,
+        this.player.y + Math.sin(angle) * profile.range * 0.48,
+        angle,
+        {
+          width: 630,
+          duration: 450,
+          startScale: 0.22,
+          endScale: 1.08,
+          echo: true,
+          fragments: 20,
+        },
+      );
       this.playPhantomKillEffect(angle, profile.range, 0xdf9df3);
       this.damageEnemiesAlongLine(
         this.player.x,
@@ -4481,6 +4642,21 @@ export class PlayScene extends Phaser.Scene {
         0xf0c97b,
       );
       this.dashPlayer(angle, profile.range);
+      this.playWeaponArtVfx(
+        weaponId,
+        3,
+        this.player.x,
+        this.player.y,
+        angle,
+        {
+          width: 650,
+          duration: 680,
+          startScale: 0.18,
+          endScale: 1.16,
+          echo: true,
+          fragments: 24,
+        },
+      );
       this.damageEnemies(
         this.player.x,
         this.player.y,
@@ -4500,7 +4676,22 @@ export class PlayScene extends Phaser.Scene {
 
     if (weaponId === "bow") {
       this.playPiercingShotCharge(angle, 0xa9db7e);
-      this.time.delayedCall(210, () =>
+      this.time.delayedCall(210, () => {
+        this.playWeaponArtVfx(
+          weaponId,
+          3,
+          this.player.x + Math.cos(angle) * profile.range * 0.34,
+          this.player.y + Math.sin(angle) * profile.range * 0.34,
+          angle,
+          {
+            width: 680,
+            duration: 600,
+            startScale: 0.26,
+            endScale: 1.08,
+            echo: true,
+            fragments: 18,
+          },
+        );
         this.launchArrow(
           angle,
           profile.range,
@@ -4508,11 +4699,26 @@ export class PlayScene extends Phaser.Scene {
           0xa9db7e,
           profile.hitRadius,
           true,
-        ),
-      );
+        );
+      });
       return;
     }
 
+    this.playWeaponArtVfx(
+      weaponId,
+      3,
+      this.player.x + Math.cos(angle) * profile.range * 0.52,
+      this.player.y + Math.sin(angle) * profile.range * 0.52,
+      angle,
+      {
+        width: 720,
+        duration: 760,
+        startScale: 0.2,
+        endScale: 1.14,
+        echo: true,
+        fragments: 24,
+      },
+    );
     this.playCometTorrentEffect(
       angle,
       profile.range,
@@ -4588,6 +4794,129 @@ export class PlayScene extends Phaser.Scene {
     );
     this.fifthFloorMission = hit.state;
     this.handleFifthFloorEvents(hit.events);
+  }
+
+  /**
+   * Layers one of fifteen skill-specific pixel-art cutouts over the
+   * deterministic primitive VFX, preserving distinct silhouettes while each
+   * weapon still shares a coherent palette.
+   */
+  private playWeaponArtVfx(
+    weaponId: WeaponId,
+    skillIndex: 1 | 2 | 3,
+    x: number,
+    y: number,
+    angle: number,
+    options: {
+      width: number;
+      duration: number;
+      alpha?: number;
+      startScale?: number;
+      endScale?: number;
+      rotationOffset?: number;
+      echo?: boolean;
+      fragments?: number;
+    },
+  ): void {
+    const color = WEAPON_VFX_COLORS[weaponId];
+    const rotation = angle + (options.rotationOffset ?? 0);
+    const baseScale = options.width / 768;
+    const startScale = baseScale * (options.startScale ?? 0.48);
+    const endScale = baseScale * (options.endScale ?? 1);
+    const alpha = options.alpha ?? 0.94;
+    const texture = `weapon-vfx-${weaponId}-skill${skillIndex}`;
+
+    const bloom = this.add
+      .circle(x, y, Math.max(18, options.width * 0.055), color, 0.24)
+      .setStrokeStyle(Math.max(3, options.width * 0.012), 0xffffff, 0.76)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(9);
+    this.tweens.add({
+      targets: bloom,
+      scale: 2.8,
+      alpha: 0,
+      duration: Math.min(360, options.duration * 0.68),
+      ease: "Expo.Out",
+      onComplete: () => bloom.destroy(),
+    });
+
+    if (options.echo) {
+      const echo = this.add
+        .image(x, y, texture)
+        .setRotation(rotation - 0.045)
+        .setScale(startScale * 0.9)
+        .setTint(color)
+        .setAlpha(alpha * 0.26)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(9);
+      this.tweens.add({
+        targets: echo,
+        scale: endScale * 1.2,
+        rotation: rotation + 0.055,
+        alpha: 0,
+        duration: options.duration + 110,
+        ease: "Cubic.Out",
+        onComplete: () => echo.destroy(),
+      });
+    }
+
+    const art = this.add
+      .image(x, y, texture)
+      .setRotation(rotation)
+      .setScale(startScale)
+      .setAlpha(alpha)
+      .setBlendMode(Phaser.BlendModes.NORMAL)
+      .setDepth(11);
+    this.tweens.add({
+      targets: art,
+      scale: endScale,
+      rotation: rotation + 0.018,
+      duration: options.duration,
+      ease: "Expo.Out",
+    });
+    this.tweens.add({
+      targets: art,
+      alpha: 0,
+      delay: options.duration * 0.38,
+      duration: options.duration * 0.62,
+      ease: "Quad.In",
+      onComplete: () => art.destroy(),
+    });
+
+    const fragmentCount = options.fragments ?? 0;
+    for (let index = 0; index < fragmentCount; index += 1) {
+      const progress = fragmentCount <= 1 ? 0.5 : index / (fragmentCount - 1);
+      const fragmentAngle = angle - Math.PI * 0.82 + progress * Math.PI * 1.64;
+      const distance = options.width * (0.14 + (index % 5) * 0.025);
+      const fragment = this.add
+        .triangle(
+          x,
+          y,
+          -3,
+          -6,
+          9 + (index % 3) * 3,
+          0,
+          -3,
+          6,
+          index % 4 === 0 ? 0xffffff : color,
+          0.9,
+        )
+        .setRotation(fragmentAngle)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(12);
+      this.tweens.add({
+        targets: fragment,
+        x: x + Math.cos(fragmentAngle) * distance,
+        y: y + Math.sin(fragmentAngle) * distance,
+        scaleX: 0.18,
+        scaleY: 0.55,
+        alpha: 0,
+        delay: (index % 3) * 18,
+        duration: 220 + (index % 5) * 28,
+        ease: "Quad.Out",
+        onComplete: () => fragment.destroy(),
+      });
+    }
   }
 
   private playLongswordSkillEffect(angle: number, color: number): void {
