@@ -5,6 +5,7 @@ import {
   transition,
   wandererRoleFromSeed,
 } from "./engine.js";
+import { getItemDefinition } from "./items.js";
 
 describe("deterministic run shell", () => {
   it("derives the same wanderer role for the same seed", () => {
@@ -30,19 +31,99 @@ describe("deterministic run shell", () => {
     expect(finished.dialogueOpen).toBe(false);
   });
 
-  it("spends gold and restores health in the shop", () => {
+  it("spends gold and puts the bought item in the bag", () => {
+    const bought = transition(createInitialSnapshot(), {
+      type: "BUY_ITEM",
+      itemId: "warm-tea",
+    }).snapshot;
+
+    expect(bought.gold).toBe(10);
+    expect(bought.inventory.find((item) => item.id === "warm-tea")).toEqual({
+      id: "warm-tea",
+      name: "따뜻한 탑차",
+      description: getItemDefinition("warm-tea")?.description,
+      quantity: 1,
+    });
+  });
+
+  it("stacks a repeat purchase instead of taking a new slot", () => {
+    const rich = { ...createInitialSnapshot(), gold: 100 };
+    const once = transition(rich, {
+      type: "BUY_ITEM",
+      itemId: "warm-tea",
+    }).snapshot;
+    const twice = transition(once, {
+      type: "BUY_ITEM",
+      itemId: "warm-tea",
+    }).snapshot;
+
+    expect(twice.gold).toBe(60);
+    expect(
+      twice.inventory.filter((item) => item.id === "warm-tea"),
+    ).toHaveLength(1);
+    expect(
+      twice.inventory.find((item) => item.id === "warm-tea")?.quantity,
+    ).toBe(2);
+  });
+
+  it("refuses a purchase the player cannot afford", () => {
+    const broke = { ...createInitialSnapshot(), gold: 5 };
+    const result = transition(broke, {
+      type: "BUY_ITEM",
+      itemId: "warm-tea",
+    });
+
+    expect(result.snapshot.gold).toBe(5);
+    expect(result.snapshot.inventory).toEqual(broke.inventory);
+    expect(result.snapshot.notice).toBe("골드가 부족합니다.");
+  });
+
+  it("consumes a bought item and restores health", () => {
     const damaged = transition(createInitialSnapshot(), {
       type: "TAKE_DAMAGE",
       amount: 40,
     }).snapshot;
-    const healed = transition(damaged, {
-      type: "BUY_HEAL",
-      price: 20,
-      amount: 35,
+    const bought = transition(damaged, {
+      type: "BUY_ITEM",
+      itemId: "warm-tea",
+    }).snapshot;
+    const used = transition(bought, {
+      type: "USE_ITEM",
+      itemId: "warm-tea",
     }).snapshot;
 
-    expect(healed.hp).toBe(95);
-    expect(healed.gold).toBe(10);
+    expect(used.hp).toBe(90);
+    expect(used.inventory.some((item) => item.id === "warm-tea")).toBe(false);
+  });
+
+  it("keeps a consumable when using it would recover nothing", () => {
+    const full = {
+      ...createInitialSnapshot(),
+      inventory: [
+        {
+          id: "warm-tea",
+          name: "따뜻한 탑차",
+          description: "",
+          quantity: 1,
+        },
+      ],
+    };
+    const result = transition(full, { type: "USE_ITEM", itemId: "warm-tea" });
+
+    expect(result.snapshot.inventory[0]?.quantity).toBe(1);
+    expect(result.events).toHaveLength(0);
+  });
+
+  it("refuses to use an item that has no effect", () => {
+    const result = transition(createInitialSnapshot(), {
+      type: "USE_ITEM",
+      itemId: "tower-key",
+    });
+
+    expect(result.snapshot.inventory).toEqual(
+      createInitialSnapshot().inventory,
+    );
+    expect(result.events).toHaveLength(0);
   });
 
   it("returns a defeated player to the rest area", () => {

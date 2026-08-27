@@ -1,5 +1,6 @@
 import { getWeaponDefinition } from "../../config/weapons.js";
 import { getItemPresentation } from "../../config/items.js";
+import { getItemDefinition, INVENTORY_SLOT_LIMIT } from "../../domain/items.js";
 import {
   HP_REGEN_PER_MINUTE,
   MP_REGEN_PER_MINUTE,
@@ -101,9 +102,7 @@ function ThirdSkillNode() {
   const weaponId = useGameStore((state) => state.snapshot.weapon);
   const level = useGameStore((state) => state.snapshot.level);
   const skillPoints = useGameStore((state) => state.snapshot.skillPoints);
-  const unlocked = useGameStore(
-    (state) => state.snapshot.resonanceUnlocked,
-  );
+  const unlocked = useGameStore((state) => state.snapshot.resonanceUnlocked);
   const dispatch = useGameStore((state) => state.dispatch);
   const weapon = getWeaponDefinition(weaponId);
   const requirement = SKILL_NODE_REQUIREMENTS.resonance;
@@ -209,30 +208,57 @@ function SecondSkillNode() {
 
 function Inventory() {
   const inventory = useGameStore((state) => state.snapshot.inventory);
+  const hp = useGameStore((state) => state.snapshot.hp);
+  const mp = useGameStore((state) => state.snapshot.mp);
+  const dispatch = useGameStore((state) => state.dispatch);
+
   return (
     <div className="inventory-grid">
-      {inventory.map((item) => (
-        <article key={item.id}>
+      {inventory.map((item) => {
+        const effect = getItemDefinition(item.id)?.effect ?? null;
+        const wouldRecover =
+          effect !== null &&
+          ((effect.hp ? hp < 100 : false) || (effect.mp ? mp < 100 : false));
+        return (
+          <article key={item.id}>
+            <div
+              className="inventory-grid__icon"
+              style={{ borderColor: getItemPresentation(item.id).tone }}
+            >
+              <img src={getItemPresentation(item.id).icon} alt="" />
+            </div>
+            <div>
+              <strong>{item.name}</strong>
+              <p>{item.description}</p>
+              {effect ? (
+                <button
+                  type="button"
+                  className="inventory-grid__use"
+                  disabled={!wouldRecover}
+                  onClick={() =>
+                    dispatch({ type: "USE_ITEM", itemId: item.id })
+                  }
+                >
+                  {wouldRecover ? "사용" : "가득 차 있음"}
+                </button>
+              ) : (
+                <span className="inventory-grid__tag">사용 불가 · 소지품</span>
+              )}
+            </div>
+            <span>× {item.quantity}</span>
+          </article>
+        );
+      })}
+      {Array.from(
+        { length: Math.max(0, INVENTORY_SLOT_LIMIT - inventory.length) },
+        (_, index) => (
           <div
-            className="inventory-grid__icon"
-            style={{ borderColor: getItemPresentation(item.id).tone }}
-          >
-            <img src={getItemPresentation(item.id).icon} alt="" />
-          </div>
-          <div>
-            <strong>{item.name}</strong>
-            <p>{item.description}</p>
-          </div>
-          <span>× {item.quantity}</span>
-        </article>
-      ))}
-      {Array.from({ length: Math.max(0, 6 - inventory.length) }, (_, index) => (
-        <div
-          className="inventory-grid__empty"
-          key={`empty-${index}`}
-          aria-label="빈 칸"
-        />
-      ))}
+            className="inventory-grid__empty"
+            key={`empty-${index}`}
+            aria-label="빈 칸"
+          />
+        ),
+      )}
     </div>
   );
 }
