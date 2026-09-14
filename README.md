@@ -6,20 +6,16 @@
 **탑 등반 액션 로그라이크 웹 게임**입니다. 현재 저장소에는 실제로 플레이할 수 있는
 P0 데모와 여러 게임에서 재사용할 수 있는 엔진 독립 공통 패키지가 함께 들어 있습니다.
 
-![종말의 탑 타이틀 화면](docs/readme/title-screen.jpg)
+## 게임플레이 영상
 
-## 시네마틱 트레일러
+[![종말의 탑 대표 이미지](apps/spire-50-demo/public/assets/marketing/종말의탑1920x1080-v5.png)](apps/spire-50-demo/public/trailers/tower-of-the-end-main-trailer-ko.mp4)
 
-[![종말의 탑 시네마틱 트레일러](docs/readme/trailer-poster.jpg)](docs/readme/trailer.mp4)
-
-> 이미지를 누르면 18초 트레일러가 재생됩니다. 실제 플레이 장면과 게임 내 BGM·효과음으로 제작했습니다.
+> 이미지를 누르면 메인 화면, 캐릭터 선택, 전투와 외눈박이 보스전을 담은 55초 게임플레이 영상이 재생됩니다.
 
 ## 플레이
 
 장검·단검·방패·활·지팡이 중 하나를 선택해 탑에 입장합니다. 각 층의 적을 쓰러뜨리고
 포탈을 열어 다음 층으로 올라가며, 휴식처에서 회복하고 장비와 스킬을 정비합니다.
-
-![종말의 탑 플레이 화면](docs/readme/gameplay.jpg)
 
 ## 현재 데모에서 할 수 있는 것
 
