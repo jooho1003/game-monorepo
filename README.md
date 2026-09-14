@@ -1,48 +1,76 @@
-# game-monorepo
+# 종말의 탑 · The End's Tower
 
-여러 웹 게임을 한 저장소에서 개발하고, 엔진 독립적인 공통 로직은 `packages/`로 묶어
-재사용하는 모노레포. pnpm workspaces + Turborepo 기반, 게임은 TypeScript + Phaser + Vite.
+> 50층 정상까지 살아서 오르십시오.
 
-## 구조
+어둠에 잠긴 탑을 탐험하며 무기를 고르고, 전투와 성장을 반복하는
+**탑 등반 액션 로그라이크 웹 게임**입니다. 현재 저장소에는 실제로 플레이할 수 있는
+P0 데모와 여러 게임에서 재사용할 수 있는 엔진 독립 공통 패키지가 함께 들어 있습니다.
 
+![종말의 탑 타이틀 화면](docs/readme/title-screen.jpg)
+
+## 플레이
+
+장검·단검·방패·활·지팡이 중 하나를 선택해 탑에 입장합니다. 각 층의 적을 쓰러뜨리고
+포탈을 열어 다음 층으로 올라가며, 휴식처에서 회복하고 장비와 스킬을 정비합니다.
+
+![종말의 탑 플레이 화면](docs/readme/gameplay.jpg)
+
+## 현재 데모에서 할 수 있는 것
+
+- 무기 5종 로드아웃과 무기별 스킬 트리
+- 시드 기반으로 재현 가능한 층 생성과 전투
+- 몬스터 전투, 아이템 획득, 인벤토리와 능력치 성장
+- 휴식처·상점·포탈·보스까지 이어지는 탑 진행
+- 키보드와 마우스로 플레이하는 데스크톱 웹 게임
+- BGM·효과음·대사·픽셀 아트가 결합된 완성형 플레이 루프
+
+## 조작
+
+| 입력 | 동작 |
+|---|---|
+| `WASD` | 이동 |
+| 이동 키 2회 | 대시 |
+| 마우스 오른쪽 | 커서 방향 공격 |
+| `1` · `2` · `3` | 무기 스킬 |
+| `Z` | 아이템 회수 |
+| `W` | 포탈 위에서 이동 |
+| `K` · `I` · `P` | 스킬·가방·상태 화면 |
+
+## 로컬 실행
+
+```bash
+pnpm install
+pnpm dev --filter=spire-50-demo
 ```
+
+빌드와 검증:
+
+```bash
+pnpm build
+pnpm test
+pnpm typecheck
+```
+
+## 모노레포 구조
+
+```text
 game-monorepo/
-├── apps/                    # 개별 게임 (각각 독립 배포)
-│   └── sample-game/         # 예시: 클리커 게임 (Phaser + Vite, 포트 5173)
+├── apps/
+│   ├── spire-50-demo/       # 종말의 탑 플레이어블 데모
+│   └── sample-game/         # Phaser + Vite 예제 게임
 ├── packages/
-│   ├── game-core/           # @game/core — 엔진 독립 로직 (시드 RNG, 점수/콤보, 수학 유틸)
-│   └── typescript-config/   # @game/typescript-config — 공용 tsconfig
+│   ├── game-core/           # 시드 RNG, 점수·콤보, 수학 유틸
+│   └── typescript-config/   # 공용 TypeScript 설정
 ├── pnpm-workspace.yaml
 └── turbo.json
 ```
 
-## 명령어
+## 기술 스택
 
-```bash
-pnpm install                  # 전체 의존성 설치
-pnpm dev --filter=sample-game # 특정 게임 dev 서버
-pnpm build                    # 전체 빌드 (turbo 캐시)
-pnpm test                     # game-core 단위 테스트 (vitest)
-pnpm typecheck                # 전체 타입 체크
-```
+TypeScript · Phaser · Vite · Vitest · pnpm Workspaces · Turborepo
 
-## 새 게임 추가하기
+공통 로직은 Phaser에 의존하지 않는 순수 TypeScript로 유지합니다. 게임 로직에서
+`Math.random()` 대신 `createRng(seed)`를 사용하므로 같은 시드의 플레이를 재현하고
+테스트할 수 있습니다.
 
-1. `apps/sample-game`을 `apps/<이름>`으로 복사하고 `package.json`의 name·포트 수정
-2. 공통 로직이 필요하면 dependencies에 `"@game/core": "workspace:*"`
-3. `pnpm install` 후 `pnpm dev --filter=<이름>`
-
-## 공통 코드 규칙
-
-- `@game/core`에는 **Phaser(엔진)에 의존하지 않는 순수 로직만** 넣는다 —
-  난수, 점수 계산, 물리/수학 유틸, 저장 포맷, 밸런스 수치 등.
-  엔진 독립이어야 vitest로 즉시 테스트되고, 나중에 다른 엔진으로 갈아타도 재사용된다.
-- 게임 로직에서 `Math.random()` 금지 — `createRng(seed)`를 쓴다.
-  시드만 알면 플레이가 재현되므로 리플레이·디버깅·테스트가 쉬워진다.
-- Phaser 씬/렌더링 코드는 각 게임 안에 둔다. 여러 게임이 같은 씬 패턴을 공유하게 되면
-  그때 `packages/game-phaser` 같은 엔진 의존 공용 패키지를 새로 만든다.
-
-## 배포
-
-정적 사이트라 어디든 올릴 수 있다. Vercel이면 게임마다 프로젝트를 만들고
-Root Directory를 `apps/<이름>`으로 지정 (Framework: Vite).
+세부 게임 문서는 [`apps/spire-50-demo/README.md`](apps/spire-50-demo/README.md)를 참고하세요.
